@@ -64,6 +64,11 @@ class YAFRAYCORE_EXPORT triangle_t
 		void setMaterial(const material_t *m) { material = m; }
 		void setNormals(int a, int b, int c){ na=a, nb=b, nc=c; }
 		virtual void recNormal();
+
+		//pov: ocl
+		void getVertices(point3d_t &p1, point3d_t &p2, point3d_t &p3) const;
+		// end
+
 		size_t getIndex() const { return selfIndex; }
         bool operator == (triangle_t const& a) const
         {

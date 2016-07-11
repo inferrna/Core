@@ -46,6 +46,8 @@ class diffRay_t: public ray_t
 		bool hasDifferentials;
 		point3d_t xfrom, yfrom;
 		vector3d_t xdir, ydir;
+		//pov: ocl
+		int idx;	// index in range 0 .. camera resX * resY * AA samples - 1
 };
 
 __END_YAFRAY

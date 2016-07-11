@@ -217,6 +217,150 @@ bool tiledIntegrator_t::renderPass(int samples, int offset, bool adaptive)
 	return true; //hm...quite useless the return value :)
 }
 
+//#ifdef WITH_OPENCL
+
+tiledIntegrator_t::PrimaryRayGenerator::PrimaryRayGenerator(
+	renderArea_t &a, int n_samples, int offset,
+	tiledIntegrator_t *integrator, renderState_t &rstate
+	) :
+	area(a), n_samples(n_samples), offset(offset),
+	integrator(integrator), rstate(rstate)
+{
+	scene = integrator->scene;
+	camera = scene->getCamera();
+	rstate.cam = camera;
+}
+
+void tiledIntegrator_t::PrimaryRayGenerator::genRays()
+{
+	bool sampleLense = camera->sampleLense();
+
+	diffRay_t c_ray;
+	ray_t d_ray;
+
+	float lens_u = 0.5f, lens_v = 0.5f;
+	PFLOAT dx = 0.5, dy = 0.5, d1 = 1.0 / (PFLOAT)n_samples;
+
+	PFLOAT wt, wt_dummy;
+	int pass_offs = offset;
+
+	int c_ray_idx = 0;
+
+	int x = camera->resX(), y = camera->resY();//povman: GCC 4.4.6 show "warning: unused variable 'y'"
+	int end_x = area.X + area.W;
+	int end_y = area.Y + area.H;
+	for (int i = area.Y; i < end_y; ++i)
+	{
+		for (int j = area.X; j<end_x; ++j)
+		{
+			if (scene->getSignals() & Y_SIG_ABORT) break;
+
+			if (skipPixel(i, j))
+				continue;
+
+			rstate.pixelNumber = x*i + j;
+			rstate.samplingOffs = fnv_32a_buf(i*fnv_32a_buf(j));//fnv_32a_buf(rstate.pixelNumber);
+			float toff = scrHalton(5, pass_offs + rstate.samplingOffs); // **shall be just the pass number...**
+
+			for (int sample = 0; sample<n_samples; ++sample)
+			{
+				rstate.setDefaults();
+				rstate.pixelSample = pass_offs + sample;
+				rstate.time = addMod1((PFLOAT)sample*d1, toff);//(0.5+(PFLOAT)sample)*d1;
+				// the (1/n, Larcher&Pillichshammer-Seq.) only gives good coverage when total sample count is known
+				// hence we use scrambled (Sobol, van-der-Corput) for multipass AA
+				if (integrator->AA_passes>1)
+				{
+					dx = RI_S(rstate.pixelSample, rstate.samplingOffs);
+					dy = RI_vdC(rstate.pixelSample, rstate.samplingOffs);
+				}
+				else if (n_samples > 1)
+				{
+					dx = (0.5 + (PFLOAT)sample)*d1;
+					dy = RI_LP(sample + rstate.samplingOffs);
+				}
+				if (sampleLense)
+				{
+					lens_u = scrHalton(3, rstate.pixelSample + rstate.samplingOffs);
+					lens_v = scrHalton(4, rstate.pixelSample + rstate.samplingOffs);
+				}
+				c_ray = camera->shootRay(j + dx, i + dy, lens_u, lens_v, wt);
+				if (wt == 0.0)
+				{
+					onCameraRayMissed(i, j, dx, dy);
+					continue;
+				}
+				//setup ray differentials
+				d_ray = camera->shootRay(j + 1 + dx, i + dy, lens_u, lens_v, wt_dummy);
+				c_ray.xfrom = d_ray.from;
+				c_ray.xdir = d_ray.dir;
+				d_ray = camera->shootRay(j + dx, i + 1 + dy, lens_u, lens_v, wt_dummy);
+				c_ray.yfrom = d_ray.from;
+				c_ray.ydir = d_ray.dir;
+				c_ray.time = rstate.time;
+				c_ray.hasDifferentials = true;
+				c_ray.idx = c_ray_idx++;
+
+				rays(c_ray, i, j, dx, dy, wt);
+			}
+		}
+	}
+}
+
+tiledIntegrator_t::RenderTile_PrimaryRayGenerator::RenderTile_PrimaryRayGenerator(
+	renderArea_t &a, int n_samples, int offset,
+	bool adaptive, int threadID,
+	tiledIntegrator_t *integrator, renderState_t &rstate
+	) :
+	PrimaryRayGenerator(a, n_samples, offset, integrator, rstate),
+	adaptive(adaptive), threadID(threadID)
+{
+	rstate.threadID = threadID;
+	do_depth = scene->doDepth();
+	imageFilm = integrator->imageFilm;
+}
+
+bool tiledIntegrator_t::RenderTile_PrimaryRayGenerator::skipPixel(int i, int j)
+{
+	if (adaptive)
+	{
+		return !imageFilm->doMoreSamples(j, i);
+	}
+	return false;
+}
+
+void tiledIntegrator_t::RenderTile_PrimaryRayGenerator::onCameraRayMissed(
+	int i, int j, int dx, int dy
+	) {
+	imageFilm->addSample(colorA_t(0.f), j, i, dx, dy, &area);
+}
+
+void tiledIntegrator_t::RenderTile_PrimaryRayGenerator::rays(
+	diffRay_t &c_ray, int i, int j, int dx, int dy, float wt
+	) {
+	// col = T * L_o + L_v
+	colorA_t col = integrator->integrate(rstate, c_ray); // L_o
+	col *= scene->volIntegrator->transmittance(rstate, c_ray); // T
+	col += scene->volIntegrator->integrate(rstate, c_ray); // L_v
+	integrator->imageFilm->addSample(wt * col, j, i, dx, dy, &area);
+
+	if (do_depth)
+	{
+		float depth = 0.f;
+		if (c_ray.tmax > 0.f)
+		{
+			// Distance normalization
+			depth = 1.f - (c_ray.tmax - integrator->minDepth) * integrator->maxDepth;
+		}
+
+		imageFilm->addDepthSample(0, depth, j, i, dx, dy);
+	}
+}
+
+
+
+//#endif
+
 bool tiledIntegrator_t::renderTile(renderArea_t &a, int n_samples, int offset, bool adaptive, int threadID)
 {
 	int x;

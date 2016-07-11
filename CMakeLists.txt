@@ -20,6 +20,9 @@ option(WITH_OSX_ADDON "Enable the use of blender's included python lib on OSX pl
 option(BUILDRELEASE "Enable release mode building" OFF)
 option(DEBUG_BUILD "Enable debug build mode" OFF)
 option(EMBED_FONT_QT "Embed font for QT GUI (usefull for some buggy QT installations)" OFF)
+#
+option(WITH_OPENCL "Enable the use of OpenCL and GPU accelerated rendering where avaialble" OFF)
+#
 option(FAST_MATH "Enable mathematic approximations to make code faster" ON)
 option(FAST_TRIG "Enable trigonometric approximations to make code faster" ON)
 option(WITH_OpenMP "Enable OpenMP parallel processing optimization" ON)
@@ -132,7 +135,11 @@ if(WITH_PNG)
 else(WITH_PNG)
 	message("Using PNG: no")
 endif(WITH_PNG)
-
+# ocl
+if(WITH_OPENCL)
+	find_package(OpenCL REQUIRED)
+endif(WITH_OPENCL)
+#
 if(WITH_TIFF)
 	find_package(TIFF REQUIRED)
 	message("Using TIFF: yes")

@@ -39,8 +39,51 @@ class YAFRAYCORE_EXPORT tiledIntegrator_t: public surfaceIntegrator_t
 		/*! render a tile; only required by default implementation of render() */
 		virtual bool renderTile(renderArea_t &a, int n_samples, int offset, bool adaptive, int threadID);
 		
-//		virtual void recursiveRaytrace(renderState_t &state, diffRay_t &ray, int rDepth, BSDF_t bsdfs, surfacePoint_t &sp, vector3d_t &wo, color_t &col, float &alpha) const;
+		//virtual void recursiveRaytrace(renderState_t &state, diffRay_t &ray, int rDepth, BSDF_t bsdfs, surfacePoint_t &sp, vector3d_t &wo, color_t &col, float &alpha) const;
 		virtual void precalcDepths();
+
+//#ifdef WITH_OPENCL
+		friend class PrimaryRayGenerator;
+		friend class RenderTile_PrimaryRayGenerator;
+
+		class YAFRAYCORE_EXPORT PrimaryRayGenerator
+		{
+		protected:
+			renderArea_t &area;
+			int n_samples, offset;
+			tiledIntegrator_t *integrator;
+			scene_t *scene;
+			const camera_t* camera;
+			renderState_t &rstate;
+		public:
+			PrimaryRayGenerator(
+				renderArea_t &a, int n_samples, int offset,
+				tiledIntegrator_t *integrator, renderState_t &rstate
+				);
+			virtual bool skipPixel(int i, int j) { return false; }
+			virtual void onCameraRayMissed(int i, int j, int dx, int dy) { }
+			virtual void rays(diffRay_t &c_ray, int i, int j, int dx, int dy, float wt) = 0;
+			virtual void genRays();
+			renderState_t &getRenderState() { return rstate; }
+		};
+
+		class YAFRAYCORE_EXPORT RenderTile_PrimaryRayGenerator : public tiledIntegrator_t::PrimaryRayGenerator
+		{
+		protected:
+			bool adaptive, threadID;
+			bool do_depth;
+			imageFilm_t *imageFilm;
+		public:
+			RenderTile_PrimaryRayGenerator(
+				renderArea_t &a, int n_samples, int offset,
+				bool adaptive, int threadID,
+				tiledIntegrator_t *integrator, renderState_t &rstate
+				);
+			bool skipPixel(int i, int j);
+			void onCameraRayMissed(int i, int j, int dx, int dy);
+			void rays(diffRay_t &c_ray, int i, int j, int dx, int dy, float wt);
+		};
+//#endif
 	
 	protected:
 		int AA_samples, AA_passes, AA_inc_samples;

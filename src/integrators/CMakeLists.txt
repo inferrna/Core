@@ -7,6 +7,13 @@ target_link_libraries(directlight yafaraycore)
 
 add_library(photonmap SHARED photonintegr.cc)
 target_link_libraries(photonmap yafaraycore)
+# cl
+if(WITH_OPENCL)
+	include_directories(${OPENCL_INCLUDE_DIR})
+	add_library(photonmapGPU SHARED photonintegrGPU.cc photonintegrGPU_test.cc common.cc)
+	target_link_libraries(photonmapGPU yafaraycore opencl_wrapper)
+	install (TARGETS photonmapGPU ${YAF_TARGET_TYPE} DESTINATION ${YAF_PLUGIN_DIR})
+endif(WITH_OPENCL)
 
 add_library(pathtrace SHARED pathtracer.cc)
 target_link_libraries(pathtrace yafaraycore)

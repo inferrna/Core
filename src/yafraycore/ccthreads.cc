@@ -73,6 +73,17 @@ mutex_t::~mutex_t()
 	CloseHandle(winMutex);
 #endif
 }
+// pov: ocl
+guard_t::guard_t(mutex_t &m) : mutex(m)
+{
+	mutex.lock();
+}
+
+guard_t::~guard_t()
+{
+	mutex.unlock();
+}
+// end
 
 /* read-shared write-exclusive lock */
 rwlock_t::rwlock_t() 

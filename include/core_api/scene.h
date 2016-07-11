@@ -223,6 +223,19 @@ class YAFRAYCORE_EXPORT scene_t
 		std::vector<light_t *> lights;
 		volumeIntegrator_t *volIntegrator;
 
+		//pov: for opencl. need review  -----------------------------------------------------
+		typedef std::map<objID_t, objData_t> objDataArray_t;
+		// TODO: this gives the user the ability to put the scene into an
+		// inconsistent state if he e.g insert points/normals which are not
+		// part of any triangle or if he insert a new objData_t with a
+		// material that is not in the materials list etc. To fix this while
+		// preserving the performance it would be better to create a visitor
+		// for the triangles in the scene.
+		objDataArray_t &getMeshes() {
+			return meshes;
+		}
+		//-------------------------------------------------------
+
 	protected:
 
 		sceneGeometryState_t state;
