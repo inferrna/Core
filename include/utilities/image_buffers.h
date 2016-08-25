@@ -66,6 +66,11 @@ public:
 		data.resize(width);
 		for(int i = 0; i < width; i++) data[i].resize(height);
 	}
+	generic2DBuffer_t(const generic2DBuffer_t& copy) : width(copy.width), height(copy.height)
+	{
+		data.resize(width);
+		for(int i = 0; i < width; i++) data[i] = std::vector< T >(copy.data[i]);
+	}
 	
 	~generic2DBuffer_t()
 	{
