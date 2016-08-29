@@ -128,6 +128,7 @@ env(e), showMask(showSamMask), tileSize(tSize), tilesOrder(tOrder), premultAlpha
 	filterTable = new float[FILTER_TABLE_SIZE * FILTER_TABLE_SIZE];
 
 	image = new rgba2DImage_t(width, height);
+    lastimage = new rgba2DImage_t(width, height);
 	densityImage = NULL;
 	estimateDensity = false;
 	depthMap = NULL;
@@ -219,6 +220,7 @@ void imageFilm_t::nextPass(bool adaptive_AA, std::string integratorName)
 	splitterMutex.unlock();
 	nPass++;
 	std::stringstream passString;
+    bool skipUnch = !((nPass % 10 == 0) || ((nPass-1) % 10 == 0)); //Force AA for "noisy" pixels each 10 and 11 passes
 
 	if(flags) flags->clear();
 	else flags = new tiledBitArray2D_t<3>(w, h, true);
@@ -229,23 +231,31 @@ void imageFilm_t::nextPass(bool adaptive_AA, std::string integratorName)
 		{
 			for(int x = 0; x < w-1; ++x)
 			{
-				bool needAA = false;
 				float c = (*image)(x, y).normalized().abscol2bri();
-				if(std::fabs(c - (*image)(x+1, y).normalized().col2bri()) >= AA_thesh)
-				{
-					needAA=true; flags->setBit(x+1, y);
-				}
-				if(std::fabs(c - (*image)(x, y+1).normalized().col2bri()) >= AA_thesh)
-				{
-					needAA=true; flags->setBit(x, y+1);
-				}
-				if(std::fabs(c - (*image)(x+1, y+1).normalized().col2bri()) >= AA_thesh)
-				{
-					needAA=true; flags->setBit(x+1, y+1);
-				}
-				if(x > 0 && std::fabs(c - (*image)(x-1, y+1).normalized().col2bri()) >= AA_thesh)
-				{
-					needAA=true; flags->setBit(x-1, y+1);
+                if (skipUnch){
+				    float lc = (*lastimage)(x, y).normalized().abscol2bri();
+                    float lastDiff = std::fabs(c - lc);
+                    bool smallScal = false;
+                    if(std::min(c, lc)>0) smallScal = (std::max(c, lc)/std::min(c, lc))<1.02;
+                    if(lastDiff<(AA_thesh/10) && smallScal) continue; //If not changed by the last AA-pass - don't need new AA
+                }
+				bool needAA = false;
+				if(std::fabs(c - (*image)(x+1, y).normalized().col2bri()) >= AA_thesh) {
+					needAA=true;
+				} else if(std::fabs(c - (*image)(x, y+1).normalized().col2bri()) >= AA_thesh) {
+					needAA=true;
+				} else if(std::fabs(c - (*image)(x+1, y+1).normalized().col2bri()) >= AA_thesh) {
+					needAA=true;
+				} else if(x > 0 && std::fabs(c - (*image)(x-1, y).normalized().col2bri()) >= AA_thesh) {
+					needAA=true;
+				} else if(x > 0 && std::fabs(c - (*image)(x-1, y+1).normalized().col2bri()) >= AA_thesh) {
+					needAA=true;
+				} else if(y > 0 && std::fabs(c - (*image)(x, y-1).normalized().col2bri()) >= AA_thesh) {
+					needAA=true;
+				} else if(y > 0 && std::fabs(c - (*image)(x+1, y-1).normalized().col2bri()) >= AA_thesh) {
+					needAA=true;
+				} else if(y > 0 && x > 0 && std::fabs(c - (*image)(x-1, y-1).normalized().col2bri()) >= AA_thesh) {
+					needAA=true;
 				}
 				if(needAA)
 				{
@@ -274,6 +284,10 @@ void imageFilm_t::nextPass(bool adaptive_AA, std::string integratorName)
 		n_resample = h*w;
 	}
 
+    if (skipUnch) {
+        delete lastimage;
+        lastimage = new rgba2DImage_t(*image); //When unchanged is not skipped, keep lastimage to compare in future
+    }
 	if(interactive) output->flush();
 
 	passString << "Rendering pass " << nPass << " of " << nPasses << ", resampling " << n_resample << " pixels.";
