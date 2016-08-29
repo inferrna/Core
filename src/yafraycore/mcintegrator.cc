@@ -42,7 +42,7 @@ __BEGIN_YAFRAY
 #define allBSDFIntersect (BSDF_GLOSSY | BSDF_DIFFUSE | BSDF_DISPERSIVE | BSDF_REFLECT | BSDF_TRANSMIT);
 #define loffsDelta 4567 //just some number to have different sequences per light...and it's a prime even...
 
-inline color_t mcIntegrator_t::estimateAllDirectLight(renderState_t &state, const surfacePoint_t &sp, const vector3d_t &wo, colorPasses_t &colorPasses) const
+inline color_t mcIntegrator_t::estimateAllDirectLight(renderState_t &state, const surfacePoint_t &sp, const vector3d_t &wo) const
 {
     color_t col;
     unsigned int loffs = 0;
@@ -55,7 +55,7 @@ inline color_t mcIntegrator_t::estimateAllDirectLight(renderState_t &state, cons
     return col;
 }
 
-inline color_t mcIntegrator_t::estimateOneDirectLight(renderState_t &state, const surfacePoint_t &sp, vector3d_t wo, int n, colorPasses_t &colorPasses) const
+inline color_t mcIntegrator_t::estimateOneDirectLight(renderState_t &state, const surfacePoint_t &sp, vector3d_t wo, int n) const
 {
     int lightNum = lights.size();
 
@@ -70,7 +70,7 @@ inline color_t mcIntegrator_t::estimateOneDirectLight(renderState_t &state, cons
     //return col * nLights;
 }
 
-inline color_t mcIntegrator_t::doLightEstimation(renderState_t &state, light_t *light, const surfacePoint_t &sp, const vector3d_t &wo, const unsigned int  &loffs, colorPasses_t &colorPasses) const
+inline color_t mcIntegrator_t::doLightEstimation(renderState_t &state, light_t *light, const surfacePoint_t &sp, const vector3d_t &wo, const unsigned int  &loffs) const
 {
     color_t col(0.f);
     bool shadowed;
@@ -192,154 +192,6 @@ inline color_t mcIntegrator_t::doLightEstimation(renderState_t &state, light_t *
         }
     }
     return col;
-}
-
-void mcIntegrator_t::causticWorker(photonMap_t * causticMap, int threadID, const scene_t *scene, unsigned int nCausPhotons, pdf1D_t *lightPowerD, int numLights, const std::string &integratorName, const std::vector<light_t *> &causLights, int causDepth, progressBar_t *pb, int pbStep, unsigned int &totalPhotonsShot)
-{
-	bool done=false;
-	float s1, s2, s3, s4, s5, s6, s7, sL;
-	float fNumLights = (float)numLights;
-	float lightNumPdf, lightPdf;
-
-	unsigned int curr = 0;
-	unsigned int nCausPhotons_thread = 1 + ( (nCausPhotons - 1) / scene->getNumThreadsPhotons() );
-
-	std::vector<photon_t> localCausticPhotons;
-
-	surfacePoint_t sp1, sp2;
-	surfacePoint_t *hit=&sp1, *hit2=&sp2;
-	ray_t ray;
-
-	renderState_t state;
-	state.cam = scene->getCamera();
-	unsigned char userdata[USER_DATA_SIZE+7];
-	state.userdata = (void *)( &userdata[7] - ( ((size_t)&userdata[7])&7 ) ); // pad userdata to 8 bytes
-
-	localCausticPhotons.clear();
-	localCausticPhotons.reserve(nCausPhotons_thread);
-
-	while(!done)
-	{
-		unsigned int haltoncurr = curr + nCausPhotons_thread * threadID;
-
-		state.chromatic = true;
-		state.wavelength = RI_S(haltoncurr);
-		
-		s1 = RI_vdC(haltoncurr);
-		s2 = scrHalton(2, haltoncurr);
-		s3 = scrHalton(3, haltoncurr);
-		s4 = scrHalton(4, haltoncurr);
-
-		sL = float(haltoncurr) / float(nCausPhotons);
-
-		int lightNum = lightPowerD->DSample(sL, &lightNumPdf);
-
-		if(lightNum >= numLights)
-		{
-			causticMap->mutx.lock();
-			Y_ERROR << integratorName << ": lightPDF sample error! " << sL << "/" << lightNum << yendl;
-			causticMap->mutx.unlock();
-			return;
-		}
-
-		color_t pcol = causLights[lightNum]->emitPhoton(s1, s2, s3, s4, ray, lightPdf);
-		ray.tmin = scene->rayMinDist;
-		ray.tmax = -1.0;
-		pcol *= fNumLights * lightPdf / lightNumPdf; //remember that lightPdf is the inverse of th pdf, hence *=...
-		if(pcol.isBlack())
-		{
-			++curr;
-			done = (curr >= nCausPhotons_thread);
-			continue;
-		}
-		BSDF_t bsdfs = BSDF_NONE;
-		int nBounces = 0;
-		bool causticPhoton = false;
-		bool directPhoton = true;
-		const material_t *material = nullptr;
-		const volumeHandler_t *vol = nullptr;
-
-		while( scene->intersect(ray, *hit2) )
-		{
-			if(std::isnan(pcol.R) || std::isnan(pcol.G) || std::isnan(pcol.B))
-			{
-				causticMap->mutx.lock();
-				Y_WARNING << integratorName << ": NaN (photon color)" << yendl;
-				causticMap->mutx.unlock();
-				break;
-			}
-			color_t transm(1.f), vcol;
-			// check for volumetric effects
-			if(material)
-			{
-				if((bsdfs&BSDF_VOLUMETRIC) && (vol=material->getVolumeHandler(hit->Ng * ray.dir < 0)))
-				{
-					vol->transmittance(state, ray, vcol);
-					transm = vcol;
-				}
-			}
-			std::swap(hit, hit2);
-			vector3d_t wi = -ray.dir, wo;
-			material = hit->material;
-			material->initBSDF(state, *hit, bsdfs);
-			if(bsdfs & (BSDF_DIFFUSE | BSDF_GLOSSY))
-			{
-				//deposit caustic photon on surface
-				if(causticPhoton)
-				{
-					photon_t np(wi, hit->P, pcol);
-					localCausticPhotons.push_back(np);
-				}
-			}
-			// need to break in the middle otherwise we scatter the photon and then discard it => redundant
-			if(nBounces == causDepth) break;
-			// scatter photon
-			int d5 = 3*nBounces + 5;
-			//int d6 = d5 + 1;
-
-			s5 = scrHalton(d5, haltoncurr);
-			s6 = scrHalton(d5+1, haltoncurr);
-			s7 = scrHalton(d5+2, haltoncurr);
-			
-			pSample_t sample(s5, s6, s7, BSDF_ALL_SPECULAR | BSDF_GLOSSY | BSDF_FILTER | BSDF_DISPERSIVE, pcol, transm);
-			bool scattered = material->scatterPhoton(state, *hit, wi, wo, sample);
-			if(!scattered) break; //photon was absorped.
-			pcol = sample.color;
-			// hm...dispersive is not really a scattering qualifier like specular/glossy/diffuse or the special case filter...
-			causticPhoton = ((sample.sampledFlags & (BSDF_GLOSSY | BSDF_SPECULAR | BSDF_DISPERSIVE)) && directPhoton) ||
-							((sample.sampledFlags & (BSDF_GLOSSY | BSDF_SPECULAR | BSDF_FILTER | BSDF_DISPERSIVE)) && causticPhoton);
-			// light through transparent materials can be calculated by direct lighting, so still consider them direct!
-			directPhoton = (sample.sampledFlags & BSDF_FILTER) && directPhoton;
-			// caustic-only calculation can be stopped if:
-			if(!(causticPhoton || directPhoton)) break;
-
-			if(state.chromatic && (sample.sampledFlags & BSDF_DISPERSIVE))
-			{
-				state.chromatic=false;
-				color_t wl_col;
-				wl2rgb(state.wavelength, wl_col);
-				pcol *= wl_col;
-			}
-			ray.from = hit->P;
-			ray.dir = wo;
-			ray.tmin = scene->rayMinDist;
-			ray.tmax = -1.0;
-			++nBounces;
-		}
-		++curr;
-		if(curr % pbStep == 0)
-		{
-			pb->mutx.lock();
-			pb->update();
-			pb->mutx.unlock();
-			if(scene->getSignals() & Y_SIG_ABORT) { return; }
-		}
-		done = (curr >= nCausPhotons_thread);
-	}
-	causticMap->mutx.lock();
-	causticMap->appendVector(localCausticPhotons, curr);
-	totalPhotonsShot += curr;
-	causticMap->mutx.unlock();
 }
 
 bool mcIntegrator_t::createCausticMap()
@@ -566,12 +418,10 @@ inline color_t mcIntegrator_t::estimateCausticPhotons(renderState_t &state, cons
     return sum;
 }
 
-inline void mcIntegrator_t::recursiveRaytrace(renderState_t &state, diffRay_t &ray, BSDF_t bsdfs, surfacePoint_t &sp, vector3d_t &wo, color_t &col, float &alpha, colorPasses_t &colorPasses, int additionalDepth) const
+inline void mcIntegrator_t::recursiveRaytrace(renderState_t &state, diffRay_t &ray, BSDF_t bsdfs, surfacePoint_t &sp, vector3d_t &wo, color_t &col, float &alpha) const
 {
     const material_t *material = sp.material;
     spDifferentials_t spDiff(sp, ray);
-
-	colorPasses_t tmpColorPasses = colorPasses;
 
     state.raylevel++;
 
@@ -677,20 +527,16 @@ inline void mcIntegrator_t::recursiveRaytrace(renderState_t &state, diffRay_t &r
                         sample_t s(s1, s2, BSDF_GLOSSY | BSDF_REFLECT);
                         color_t mcol = material->sample(state, sp, wo, wi, s, W);
                         colorA_t integ = 0.f;
-                        refRay = diffRay_t(sp.P, wi, scene->rayMinDist);
-                        if(diffRaysEnabled)
-                        {
-			    if(s.sampledFlags & BSDF_REFLECT) spDiff.reflectedRay(ray, refRay);
-			    else if(s.sampledFlags & BSDF_TRANSMIT) spDiff.refractedRay(ray, refRay, material->getMatIOR());
-                        }
-                        integ = (color_t)integrate(state, refRay, tmpColorPasses, additionalDepth);
+                        refRay = diffRay_t(sp.P, wi, MIN_RAYDIST);
+                        if(s.sampledFlags & BSDF_REFLECT) spDiff.reflectedRay(ray, refRay);
+                        else if(s.sampledFlags & BSDF_TRANSMIT) spDiff.refractedRay(ray, refRay, material->getMatIOR());
+                        integ = (color_t)integrate(state, refRay);
 
                         if((bsdfs&BSDF_VOLUMETRIC) && (vol=material->getVolumeHandler(sp.Ng * refRay.dir < 0)))
                         {
                             if(vol->transmittance(state, refRay, vcol)) integ *= vcol;
                         }
-                        
-                        gcol += tmpColorPasses.probe_add(PASS_INT_GLOSSY_INDIRECT, (color_t)integ * mcol * W, state.raylevel == 1);
+                        gcol += (color_t)integ * mcol * W;
                     }
                     else if((material->getFlags() & BSDF_REFLECT) && (material->getFlags() & BSDF_TRANSMIT))
                     {
@@ -702,31 +548,28 @@ inline void mcIntegrator_t::recursiveRaytrace(renderState_t &state, diffRay_t &r
                         mcol[0] = material->sample(state, sp, wo, dir, mcol[1], s, W);
                         colorA_t integ = 0.f;
 
-                        if(s.sampledFlags & BSDF_REFLECT && !(s.sampledFlags & BSDF_DISPERSIVE))
+                        if(s.sampledFlags & BSDF_REFLECT)
                         {
-                            refRay = diffRay_t(sp.P, dir[0], scene->rayMinDist);
-                            if(diffRaysEnabled) spDiff.reflectedRay(ray, refRay);
-                            integ = integrate(state, refRay, tmpColorPasses, additionalDepth);
+                            refRay = diffRay_t(sp.P, dir[0], MIN_RAYDIST);
+                            spDiff.reflectedRay(ray, refRay);
+                            integ = integrate(state, refRay);
                             if((bsdfs&BSDF_VOLUMETRIC) && (vol=material->getVolumeHandler(sp.Ng * refRay.dir < 0)))
                             {
                                 if(vol->transmittance(state, refRay, vcol)) integ *= vcol;
                             }
-                            color_t colReflectFactor = mcol[0] * W[0];
-                            gcol += tmpColorPasses.probe_add(PASS_INT_TRANS, (color_t)integ * colReflectFactor, state.raylevel == 1);
+                            gcol += (color_t)integ * mcol[0] * W[0];
                         }
 
                         if(s.sampledFlags & BSDF_TRANSMIT)
                         {
-                            refRay = diffRay_t(sp.P, dir[1], scene->rayMinDist);
-                            if(diffRaysEnabled) spDiff.refractedRay(ray, refRay, material->getMatIOR());
-                            integ = integrate(state, refRay, tmpColorPasses, additionalDepth);
+                            refRay = diffRay_t(sp.P, dir[1], MIN_RAYDIST);
+                            spDiff.refractedRay(ray, refRay, material->getMatIOR());
+                            integ = integrate(state, refRay);
                             if((bsdfs&BSDF_VOLUMETRIC) && (vol=material->getVolumeHandler(sp.Ng * refRay.dir < 0)))
                             {
                                 if(vol->transmittance(state, refRay, vcol)) integ *= vcol;
                             }
-                            
-                            color_t colTransmitFactor = mcol[1] * W[1];
-                            gcol += tmpColorPasses.probe_add(PASS_INT_GLOSSY_INDIRECT, (color_t)integ * colTransmitFactor, state.raylevel == 1);
+                            gcol += (color_t)integ * mcol[1] * W[1];
                             alpha = integ.A;
                         }
                     }

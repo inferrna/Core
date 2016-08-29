@@ -59,7 +59,7 @@ bool SPPM::preprocess()
     return true;
 }
 
-bool SPPM::render(int numView, yafaray::imageFilm_t *image)
+bool SPPM::render(yafaray::imageFilm_t *image)
 {
     std::stringstream passString;
     std::stringstream SettingsSPPM;
@@ -107,7 +107,7 @@ bool SPPM::render(int numView, yafaray::imageFilm_t *image)
 }
 
 
-bool SPPM::renderTile(int numView, renderArea_t &a, int n_samples, int offset, bool adaptive, int threadID, int AA_pass_number)
+bool SPPM::renderTile(renderArea_t &a, int n_samples, int offset, bool adaptive, int threadID)
 {
     int x;
     const camera_t* camera = scene->getCamera();
@@ -207,14 +207,15 @@ bool SPPM::renderTile(int numView, renderArea_t &a, int n_samples, int offset, b
                     {
                         if(c_ray.tmax > 0.f)
                         {
-                            colorPasses(idx) = colorA_t(1.f) - colorPasses(idx);
+                            depth = 1.f - (c_ray.tmax - minDepth) * maxDepth; // Distance normalization
                         }
-                        
-                        if(!colorPasses.get_pass_mask_only())
+                    }
+                    else
+                    {
+                        depth = c_ray.tmax;
+                        if(depth <= 0.f)
                         {
-                            colorA_t colCombined = colorPasses(PASS_INT_COMBINED);
-                            colCombined.A = 1.f;	
-                            colorPasses(idx) *= colCombined;
+                            depth = 99999997952.f;
                         }
                     }
 
@@ -226,7 +227,8 @@ bool SPPM::renderTile(int numView, renderArea_t &a, int n_samples, int offset, b
     return true;
 }
 
-void SPPM::photonWorker(photonMap_t * diffuseMap, photonMap_t * causticMap, int threadID, const scene_t *scene, unsigned int nPhotons, const pdf1D_t *lightPowerD, int numDLights, const std::string &integratorName, const std::vector<light_t *> &tmplights, progressBar_t *pb, int pbStep, unsigned int &totalPhotonsShot, int maxBounces, random_t & prng)
+//photon pass, scatter photon
+void SPPM::prePass(int samples, int offset, bool adaptive)
 {
     std::stringstream set;
     gTimer.addEvent("prePass");
@@ -500,13 +502,13 @@ void SPPM::photonWorker(photonMap_t * diffuseMap, photonMap_t * causticMap, int 
 }
 
 //now it's a dummy function
-colorA_t SPPM::integrate(renderState_t &state, diffRay_t &ray, colorPasses_t &colorPasses, int additionalDepth /*=0*/ /*, sampler_t &sam*/) const
+colorA_t SPPM::integrate(renderState_t &state, diffRay_t &ray/*, sampler_t &sam*/) const
 {
     return colorA_t(0.f);
 }
 
 
-GatherInfo SPPM::traceGatherRay(yafaray::renderState_t &state, yafaray::diffRay_t &ray, yafaray::HitPoint &hp, colorPasses_t &colorPasses)
+GatherInfo SPPM::traceGatherRay(yafaray::renderState_t &state, yafaray::diffRay_t &ray, yafaray::HitPoint &hp)
 {
     static int _nMax=0;
     static int calls=0;

@@ -43,7 +43,7 @@ inline point3d_t tubemap(const point3d_t &p)
 {
 	point3d_t res;
 	res.y = p.z;
-	float d = p.x*p.x + p.y*p.y;
+	PFLOAT d = p.x*p.x + p.y*p.y;
 	if (d>0) {
 		res.z = 1.0/fSqrt(d);
 		res.x = -atan2(p.x, p.y) * M_1_PI;
@@ -56,7 +56,7 @@ inline point3d_t tubemap(const point3d_t &p)
 inline point3d_t spheremap(const point3d_t &p)
 {
 	point3d_t res(0.f);
-	float d = p.x*p.x + p.y*p.y + p.z*p.z;
+	PFLOAT d = p.x*p.x + p.y*p.y + p.z*p.z;
 	if (d>0) {
 		res.z = fSqrt(d);
 		if ((p.x!=0) && (p.y!=0)) res.x = -atan2(p.x, p.y) * M_1_PI;
@@ -103,7 +103,7 @@ point3d_t textureMapper_t::doMapping(const point3d_t &p, const vector3d_t &N)con
 		default: break;
 	}
 	// Texture axis mapping
-	float texmap[4] = {0, texpt.x, texpt.y, texpt.z};
+	PFLOAT texmap[4] = {0, texpt.x, texpt.y, texpt.z};
 	texpt.x=texmap[map_x];
 	texpt.y=texmap[map_y];
 	texpt.z=texmap[map_z];
@@ -136,15 +136,10 @@ void textureMapper_t::getCoords(point3d_t &texpt, vector3d_t &Ng, const surfaceP
 		case TXC_ORCO:	texpt = sp.orcoP; Ng = sp.orcoNg; break;
 		case TXC_TRAN:	texpt = mtx * sp.P; Ng = mtx * sp.Ng; break;  // apply 4x4 matrix of object for mapping also to true surface normals
 		case TXC_WIN:	texpt = state.cam->screenproject(sp.P); Ng = sp.Ng; break;
-		case TXC_NOR:	{	
-							vector3d_t camx, camy, camz;
-							state.cam->getAxis(camx,camy,camz);
-							texpt = point3d_t(sp.N*camx, -sp.N*camy, 0); Ng = sp.Ng;
-							break;
-						}
 		case TXC_STICK:	// Not implemented yet use GLOB
 		case TXC_STRESS:// Not implemented yet use GLOB
 		case TXC_TAN:	// Not implemented yet use GLOB
+		case TXC_NOR:	// Not implemented yet use GLOB
 		case TXC_REFL:	// Not implemented yet use GLOB
 		case TXC_GLOB:	// GLOB mapped as default
 		default:		texpt = sp.P; Ng = sp.Ng; break;
@@ -179,7 +174,7 @@ void textureMapper_t::evalDerivative(nodeStack_t &stack, const renderState_t &st
 
 	getCoords(texpt, Ng, sp, state);
 
-	if (tex->discrete() && sp.hasUV && tex_coords == TXC_UV)  
+	if (tex->discrete())
 	{
 		texpt = doMapping(texpt, Ng);
 		colorA_t color(0.f);
@@ -188,7 +183,7 @@ void textureMapper_t::evalDerivative(nodeStack_t &stack, const renderState_t &st
 		if (tex->isNormalmap())
 		{
 			// Get color from normal map texture
-			color = tex->getRawColor(texpt);
+			color = tex->getNoGammaColor(texpt);
 
 			// Assign normal map RGB colors to vector norm
 			norm.x = color.getR();
@@ -230,55 +225,17 @@ void textureMapper_t::evalDerivative(nodeStack_t &stack, const renderState_t &st
 	}
 	else
 	{
-		if (tex->isNormalmap())
-		{
-			texpt = doMapping(texpt, Ng);
-			colorA_t color(0.f);
-			vector3d_t norm(0.f);
+		// no uv coords -> procedurals usually, this mapping only depends on NU/NV which is fairly arbitrary
+		// weird things may happen when objects are rotated, i.e. incorrect bump change
+		point3d_t i0 = doMapping(texpt - dU * sp.NU, Ng);
+		point3d_t i1 = doMapping(texpt + dU * sp.NU, Ng);
+		point3d_t j0 = doMapping(texpt - dV * sp.NV, Ng);
+		point3d_t j1 = doMapping(texpt + dV * sp.NV, Ng);
 
-			// Get color from normal map texture
-			color = tex->getRawColor(texpt);
-
-			// Assign normal map RGB colors to vector norm
-			norm.x = color.getR();
-			norm.y = color.getG();
-			norm.z = color.getB();
-			norm = (2.f * norm) - 1.f;
-
-			// Convert norm into shading space
-			du = norm * sp.dSdU;
-			dv = norm * sp.dSdV;
-			
-			norm.normalize();
-
-			if(std::fabs(norm.z) > 1e-30f)
-			{
-				float NF = 1.0/norm.z * bumpStr; // normalizes z to 1, why?
-				du = norm.x * NF;
-				dv = norm.y * NF;
-			}
-			else du = dv = 0.f;
-		}
-		else
-		{
-			// no uv coords -> procedurals usually, this mapping only depends on NU/NV which is fairly arbitrary
-			// weird things may happen when objects are rotated, i.e. incorrect bump change
-			point3d_t i0 = doMapping(texpt - dU * sp.NU, Ng);
-			point3d_t i1 = doMapping(texpt + dU * sp.NU, Ng);
-			point3d_t j0 = doMapping(texpt - dV * sp.NV, Ng);
-			point3d_t j1 = doMapping(texpt + dV * sp.NV, Ng);
-
-			du = (tex->getFloat(i0) - tex->getFloat(i1)) / dU;
-			dv = (tex->getFloat(j0) - tex->getFloat(j1)) / dV;
-			du *= bumpStr;
-			dv *= bumpStr;
-			
-			if(tex_coords != TXC_UV)
-			{
-				du = -du;
-				dv = -dv;
-			}
-		}
+		du = (tex->getFloat(i0) - tex->getFloat(i1)) / dU;
+		dv = (tex->getFloat(j0) - tex->getFloat(j1)) / dV;
+		du *= bumpStr;
+		dv *= bumpStr;
 	}
 
 	stack[this->ID] = nodeResult_t(colorA_t(du, dv, 0.f, 0.f), 0.f );
@@ -298,7 +255,7 @@ shaderNode_t* textureMapper_t::factory(const paraMap_t &params,renderEnvironment
 	if( !params.getParam("texture", texname) )
 	{
 		Y_ERROR << "TextureMapper: No texture given for texture mapper!" << yendl;
-		return nullptr;
+		return 0;
 	}
 	tex = render.getTexture(*texname);
 	if(!tex)
@@ -537,7 +494,7 @@ class screenNode_t: public mixNode_t
 			f1 = 1.f - f2;
 
 			colorA_t color = colorA_t(1.f) - (colorA_t(f1) + f2 * (1.f - cin2)) * (1.f - cin1);
-			float scalar   = 1.0 - (f1 + f2*(1.f - fin2)) * (1.f -  fin1);
+			CFLOAT scalar   = 1.0 - (f1 + f2*(1.f - fin2)) * (1.f -  fin1);
 			stack[this->ID] = nodeResult_t(color, scalar);
 		}
 };
@@ -616,7 +573,7 @@ class overlayNode_t: public mixNode_t
 			color.G = (cin1.G < 0.5f) ? cin1.G * (f1 + 2.0f*f2*cin2.G) : 1.0 - (f1 + 2.0f*f2*(1.0 - cin2.G)) * (1.0 - cin1.G);
 			color.B = (cin1.B < 0.5f) ? cin1.B * (f1 + 2.0f*f2*cin2.B) : 1.0 - (f1 + 2.0f*f2*(1.0 - cin2.B)) * (1.0 - cin1.B);
 			color.A = (cin1.A < 0.5f) ? cin1.A * (f1 + 2.0f*f2*cin2.A) : 1.0 - (f1 + 2.0f*f2*(1.0 - cin2.A)) * (1.0 - cin1.A);
-			float scalar = (fin1 < 0.5f) ? fin1 * (f1 + 2.0f*f2*fin2) : 1.0 - (f1 + 2.0f*f2*(1.0 - fin2)) * (1.0 - fin1);
+			CFLOAT scalar = (fin1 < 0.5f) ? fin1 * (f1 + 2.0f*f2*fin2) : 1.0 - (f1 + 2.0f*f2*(1.0 - fin2)) * (1.0 - fin1);
 			stack[this->ID] = nodeResult_t(color, scalar);
 		}
 };

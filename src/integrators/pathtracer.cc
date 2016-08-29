@@ -29,12 +29,10 @@
 #include <yafraycore/scr_halton.h>
 #include <yafraycore/photon.h>
 #include <yafraycore/spectrum.h>
-#include <yafraycore/timer.h>
 
 #include <utilities/mcqmc.h>
 //#include <integrators/integr_utils.h>
 #include <sstream>
-#include <iomanip>
 
 __BEGIN_YAFRAY
 
@@ -133,7 +131,7 @@ bool pathIntegrator_t::preprocess()
     return success;
 }
 
-colorA_t pathIntegrator_t::integrate(renderState_t &state, diffRay_t &ray, colorPasses_t &colorPasses, int additionalDepth /*=0*/ /*, sampler_t &sam*/) const
+colorA_t pathIntegrator_t::integrate(renderState_t &state, diffRay_t &ray/*, sampler_t &sam*/) const
 {
     static int calls=0;
     ++calls;

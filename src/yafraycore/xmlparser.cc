@@ -108,7 +108,7 @@ static xmlSAXHandler my_handler =
 };
 #endif // HAVE_XML
 
-bool parse_xml_file(const char *filename, scene_t *scene, renderEnvironment_t *env, paraMap_t &render, std::string color_space_string, float input_gamma)
+bool parse_xml_file(const char *filename, scene_t *scene, renderEnvironment_t *env, paraMap_t &render)
 {
 #if defined HAVE_XML
     xmlParser_t parser(env, scene, render);
@@ -219,7 +219,7 @@ static bool parseNormal(const char **attrs, normal_t &n)
     return (compoRead == 3);
 }
 
-void parseParam(const char **attrs, parameter_t &param, xmlParser_t &parser)
+void parseParam(const char **attrs, parameter_t &param)
 {
     if(!attrs[0]) return;
     if(!attrs[2]) // only one attribute => bool, integer or float value
@@ -305,14 +305,6 @@ struct mesh_dat_t
 struct curve_dat_t
 {
     curve_dat_t(): ID(0), mat(0), strandStart(0), strandEnd(0), strandShape(0) {};
-    objID_t ID;
-    const material_t *mat;
-    float strandStart, strandEnd, strandShape;
-};
-
-struct curve_dat_t
-{
-    curve_dat_t(): ID(0), mat(nullptr), strandStart(0), strandEnd(0), strandShape(0) {};
     objID_t ID;
     const material_t *mat;
     float strandStart, strandEnd, strandShape;
@@ -443,54 +435,6 @@ void endEl_scene(xmlParser_t &parser, const char *element)
     }
 }
 
-void startEl_curve(xmlParser_t &parser, const char *element, const char **attrs)
-{
-    std::string el(element);
-    curve_dat_t *dat = (curve_dat_t *)parser.stateData();
-
-    if(el == "p")
-    {
-        point3d_t p, op;
-        if(!parsePoint(attrs, p, op)) return;
-        parser.scene->addVertex(p);
-    }
-    else if(el == "strand_start")
-    {
-        dat->strandStart = atof(attrs[1]);
-    }
-    else if(el == "strand_end")
-    {
-        dat->strandEnd = atof(attrs[1]);
-    }
-    else if(el == "strand_shape")
-    {
-        dat->strandShape = atof(attrs[1]);
-
-    }
-    else if(el == "set_material")
-    {
-        std::string mat_name(attrs[1]);
-        dat->mat = parser.env->getMaterial(mat_name);
-        if(!dat->mat) Y_WARNING << "XMLParser: Unknown material!" << yendl;
-    }
-}
-void endEl_curve(xmlParser_t &parser, const char *element)
-{
-    if(std::string(element) == "curve")
-    {
-        curve_dat_t *cd = (curve_dat_t *)parser.stateData();
-        if(!parser.scene->endCurveMesh(cd->mat, cd->strandStart, cd->strandEnd, cd->strandShape))
-        {
-            Y_WARNING << "XMLParser: Invalid scene state on endCurveMesh()!" << yendl;
-        }
-        if(!parser.scene->endGeometry())
-        {
-            Y_WARNING << "XMLParser: Invalid scene state on endGeometry()!" << yendl;
-        }
-        delete cd;
-        parser.popState();
-    }
-}
 void startEl_curve(xmlParser_t &parser, const char *element, const char **attrs)
 {
     std::string el(element);

@@ -18,60 +18,24 @@
 #include <cstdlib>
 #include <cctype>
 #include <algorithm>
-#include <signal.h>
 
 #ifdef WIN32
 	#include <windows.h>
     #include <direct.h>
 #endif
 
-#include <boost/filesystem.hpp>
-
 #include <core_api/scene.h>
 #include <core_api/environment.h>
 #include <core_api/integrator.h>
 #include <core_api/imagefilm.h>
 #include <yafraycore/xmlparser.h>
+#include <yaf_revision.h>
 #include <utilities/console_utils.h>
 #include <yafraycore/imageOutput.h>
 
+#include <gui/yafqtapi.h>
+
 using namespace::yafaray;
-
-scene_t *globalScene = nullptr;
-
-#ifdef WIN32
-BOOL WINAPI ctrl_c_handler(DWORD signal) {
-	if(globalScene)
-	{
-		globalScene->abort(); 
-		session.setStatusRenderAborted();
-		Y_WARNING << "Interface: Render aborted by user." << yendl;
-	}
-	else
-	{
-		session.setStatusRenderAborted();
-		Y_WARNING << "Interface: Render aborted by user." << yendl;
-		exit(1);
-	}
-    return TRUE;
-}
-#else
-void ctrl_c_handler(int signal)
-{
-	if(globalScene)
-	{
-		globalScene->abort(); 
-		session.setStatusRenderAborted();
-		Y_WARNING << "Interface: Render aborted by user." << yendl;
-	}
-	else
-	{
-		session.setStatusRenderAborted();
-		Y_WARNING << "Interface: Render aborted by user." << yendl;
-		exit(1);
-	}	
-}
-#endif
 
 int main(int argc, char *argv[])
 {
@@ -103,11 +67,6 @@ int main(int argc, char *argv[])
 	std::string version = std::string(YAF_SVN_REV);
 #endif
 
-	bool console_colors_disabled = parse.getFlag("ccd");
-
-	if(console_colors_disabled) yafLog.setConsoleLogColorsEnabled(false);
-	else yafLog.setConsoleLogColorsEnabled(true);
-	
 	renderEnvironment_t *env = new renderEnvironment_t();
 
 	// Plugin load
@@ -120,7 +79,7 @@ int main(int argc, char *argv[])
 
 	if (!ppath.empty())
 	{
-		Y_VERBOSE << "The plugin path is: " << ppath << yendl;
+		Y_INFO << "The plugin path is: " << ppath << yendl;
 		env->loadPlugins(ppath);
 	}
 	else
@@ -190,6 +149,9 @@ int main(int argc, char *argv[])
 	bool alpha = parse.getFlag("a");
 	std::string format = parse.getOptionString("f");
 	int threads = parse.getOptionInteger("t");
+	bool drawparams = parse.getFlag("dp");
+	bool nodrawparams = parse.getFlag("ndp");
+	std::string customString = parse.getOptionString("cs");
 	bool zbuf = parse.getFlag("z");
 	bool nozbuf = parse.getFlag("nz");
 
@@ -281,30 +243,8 @@ int main(int argc, char *argv[])
 
 	if(drawparams)
 	{
-		render["logging_saveLog"] = false;
-		render["logging_saveHTML"] = false;
-	}
-	if(logFileTypes == "txt")
-	{
-		render["logging_saveLog"] = true;
-		render["logging_saveHTML"] = false;
-	}
-	if(logFileTypes == "html")
-	{
-		render["logging_saveLog"] = false;
-		render["logging_saveHTML"] = true;
-	}
-	if(logFileTypes == "txt+html")
-	{
-		render["logging_saveLog"] = true;
-		render["logging_saveHTML"] = true;
-	}
-
-	std::string params_badge_position = parse.getOptionString("pbp");
-	if(!params_badge_position.empty())
-	{
-		render["logging_paramsBadgePosition"] = params_badge_position;
-		yafLog.setParamsBadgePosition(params_badge_position);
+		render["drawParams"] = true;
+		if(!customString.empty()) render["customString"] = customString;
 	}
 
 	if(nodrawparams) render["drawParams"] = false;
@@ -316,7 +256,7 @@ int main(int argc, char *argv[])
 	render.getParam("z_channel", use_zbuf);
 
 	// create output
-	colorOutput_t *out = nullptr;
+	colorOutput_t *out = NULL;
 
 	paraMap_t ihParams;
 	ihParams["type"] = format;
@@ -337,8 +277,9 @@ int main(int argc, char *argv[])
 	if(! env->setupScene(*scene, render, *out) ) return 1;
 
 	scene->render();
-	
 	env->clearAll();
+
+	imageFilm_t *film = scene->getImageFilm();
 
 	delete film;
 	delete out;

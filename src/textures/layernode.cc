@@ -3,7 +3,7 @@
 
 __BEGIN_YAFRAY
 
-layerNode_t::layerNode_t(unsigned tflag, float col_fac, float val_fac, float def_val, colorA_t def_col, mix_modes mmod):
+layerNode_t::layerNode_t(unsigned tflag, CFLOAT col_fac, CFLOAT val_fac, CFLOAT def_val, colorA_t def_col, mix_modes mmod):
 			input(0), upperLayer(0), texflag(tflag), colfac(col_fac), valfac(val_fac), default_val(def_val),
 			default_col(def_col), mode(mmod), do_color(false), do_scalar(false), color_input(false)
 {}
@@ -11,7 +11,7 @@ layerNode_t::layerNode_t(unsigned tflag, float col_fac, float val_fac, float def
 void layerNode_t::eval(nodeStack_t &stack, const renderState_t &state, const surfacePoint_t &sp)const
 {
 	colorA_t rcol, texcolor;
-	float rval, Tin=0.f, Ta=1.f, stencilTin = 1.f;
+	CFLOAT rval, Tin=0.f, Ta=1.f, stencilTin = 1.f;
 	// == get result of upper layer (or base values) ==
 	rcol = (upperLayer) ? upperLayer->getColor(stack) : upper_col;
 	rval = (upperLayer) ? upperLayer->getScalar(stack) : upper_val;
@@ -39,7 +39,7 @@ void layerNode_t::eval(nodeStack_t &stack, const renderState_t &state, const sur
 		Tin = 1.f-Tin;
 	}
 	
-	float fact;
+	CFLOAT fact;
 	
 	if(texflag & TXF_STENCIL)
 	{
@@ -65,7 +65,7 @@ void layerNode_t::eval(nodeStack_t &stack, const renderState_t &state, const sur
 		// check good range value
 		Tin = inRange(1.f, 0.f, Tin);
 		
-		rcol = texture_rgb_blend(texcolor, rcol, Tin_truncated_range, stencilTin * colfac, mode);
+		rcol = texture_rgb_blend(texcolor, rcol, Tin, stencilTin * colfac, mode);
 		rcol.clampRGB0();
 	}
 	
@@ -100,8 +100,8 @@ void layerNode_t::eval(nodeStack_t &stack, const renderState_t &state, const sur
 void layerNode_t::evalDerivative(nodeStack_t &stack, const renderState_t &state, const surfacePoint_t &sp)const
 {
 	colorA_t texcolor;
-	float rdu=0.f, rdv=0.f, tdu, tdv;
-	float stencilTin = 1.f;
+	CFLOAT rdu=0.f, rdv=0.f, tdu, tdv;
+	CFLOAT stencilTin = 1.f;
 
 	// == get result of upper layer (or base values) ==
 	if(upperLayer)
@@ -145,13 +145,13 @@ bool layerNode_t::configInputs(const paraMap_t &params, const nodeFinder_t &find
 		input = find(*name);
 		if(!input)
 		{
-			Y_WARNING << "LayerNode: Couldn't get input " << *name << yendl;
+			Y_INFO << "LayerNode: Couldn't get input " << *name << yendl;
 			return false;
 		}
 	}
 	else
 	{
-		Y_WARNING << "LayerNode: input not set" << yendl;
+		Y_INFO << "LayerNode: input not set" << yendl;
 		return false;
 	}
 	
@@ -160,7 +160,7 @@ bool layerNode_t::configInputs(const paraMap_t &params, const nodeFinder_t &find
 		upperLayer = find(*name);
 		if(!upperLayer)
 		{
-			Y_VERBOSE << "LayerNode: Couldn't get upper_layer " << *name << yendl;
+			Y_INFO << "LayerNode: Couldn't get upper_layer " << *name << yendl;
 			return false;
 		}
 	}

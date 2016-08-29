@@ -45,30 +45,21 @@
 
 __BEGIN_YAFRAY
 
-scene_t::scene_t(const renderEnvironment_t *render_environment):  volIntegrator(nullptr), camera(nullptr), imageFilm(nullptr), tree(nullptr), vtree(nullptr), background(nullptr), surfIntegrator(nullptr),	AA_samples(1), AA_passes(1), AA_threshold(0.05), nthreads(1), nthreads_photons(1), mode(1), signals(0), env(render_environment)
+scene_t::scene_t():  volIntegrator(0), camera(0), imageFilm(0), tree(0), vtree(0), background(0), surfIntegrator(0),
+					AA_samples(1), AA_passes(1), AA_threshold(0.05), nthreads(1), mode(1), do_depth(false), norm_depth(false), signals(0)
 {
 	state.changes = C_ALL;
 	state.stack.push_front(READY);
 	state.nextFreeID = std::numeric_limits<int>::max();
-	state.curObj = nullptr;
-
-	AA_resampled_floor = 0.f;
-	AA_sample_multiplier_factor = 1.f;
-	AA_light_sample_multiplier_factor = 1.f;
-	AA_indirect_sample_multiplier_factor = 1.f;
-	AA_detect_color_noise = false;
-	AA_dark_threshold_factor = 0.f;
-	AA_variance_edge_size = 10;
-	AA_variance_pixels = 0;
-	AA_clamp_samples = 0.f;
-	AA_clamp_indirect = 0.f;
+	state.curObj = 0;
 }
 
 scene_t::~scene_t()
 {
 	if(tree) delete tree;
 	if(vtree) delete vtree;
-	for(auto i = meshes.begin(); i != meshes.end(); ++i)
+	std::map<objID_t, objData_t>::iterator i;
+	for(i = meshes.begin(); i != meshes.end(); ++i)
 	{
 		if(i->second.type == TRIM)
 			delete i->second.obj;
@@ -93,23 +84,12 @@ int scene_t::getSignals() const
 	return sig;
 }
 
-void scene_t::getAAParameters(int &samples, int &passes, int &inc_samples, float &threshold, float &resampled_floor, float &sample_multiplier_factor, float &light_sample_multiplier_factor, float &indirect_sample_multiplier_factor, bool &detect_color_noise, int &dark_detection_type, float &dark_threshold_factor, int &variance_edge_size, int &variance_pixels, float &clamp_samples, float &clamp_indirect) const
+void scene_t::getAAParameters(int &samples, int &passes, int &inc_samples, CFLOAT &threshold) const
 {
 	samples = AA_samples;
 	passes = AA_passes;
 	inc_samples = AA_inc_samples;
 	threshold = AA_threshold;
-	resampled_floor = AA_resampled_floor;
-	sample_multiplier_factor = AA_sample_multiplier_factor;
-	light_sample_multiplier_factor = AA_light_sample_multiplier_factor;
-	indirect_sample_multiplier_factor = AA_indirect_sample_multiplier_factor;
-	detect_color_noise = AA_detect_color_noise;
-	dark_detection_type = AA_dark_detection_type;
-	dark_threshold_factor = AA_dark_threshold_factor;
-	variance_edge_size = AA_variance_edge_size;
-	variance_pixels = AA_variance_pixels;
-	clamp_samples = AA_clamp_samples;
-	clamp_indirect = AA_clamp_indirect;
 }
 
 bool scene_t::startGeometry()
@@ -125,7 +105,7 @@ bool scene_t::endGeometry()
 	// in case objects share arrays, so they all need to be updated
 	// after each object change, uncomment the below block again:
 	// don't forget to update the mesh object iterators!
-/*	for(auto i=meshes.begin();
+/*	for(std::map<objID_t, objData_t>::iterator i=meshes.begin();
 		 i!=meshes.end(); ++i)
 	{
 		objData_t &dat = (*i).second;
@@ -135,7 +115,7 @@ bool scene_t::endGeometry()
 	return true;
 }
 
-bool scene_t::startCurveMesh(objID_t id, int vertices, int obj_pass_index)
+bool scene_t::startCurveMesh(objID_t id, int vertices)
 {
 	if(state.stack.front() != GEOMETRY) return false;
 	int ptype = 0 & 0xFF;
@@ -145,7 +125,6 @@ bool scene_t::startCurveMesh(objID_t id, int vertices, int obj_pass_index)
 	//TODO: switch?
 	// Allocate triangles to render the curve
 	nObj.obj = new triangleObject_t( 2 * (vertices-1) , true, false);
-	nObj.obj->setObjectIndex(obj_pass_index);
 	nObj.type = ptype;
 	state.stack.push_front(OBJECT);
 	state.changes |= C_GEOM;
@@ -284,7 +263,7 @@ bool scene_t::endCurveMesh(const material_t *mat, float strandStart, float stran
 	return true;
 }
 
-bool scene_t::startTriMesh(objID_t id, int vertices, int triangles, bool hasOrco, bool hasUV, int type, int obj_pass_index)
+bool scene_t::startTriMesh(objID_t id, int vertices, int triangles, bool hasOrco, bool hasUV, int type)
 {
 	if(state.stack.front() != GEOMETRY) return false;
 	int ptype = type & 0xFF;
@@ -296,12 +275,10 @@ bool scene_t::startTriMesh(objID_t id, int vertices, int triangles, bool hasOrco
 		case TRIM:	nObj.obj = new triangleObject_t(triangles, hasUV, hasOrco);
 					nObj.obj->setVisibility( !(type & INVISIBLEM) );
 					nObj.obj->useAsBaseObject( (type & BASEMESH) );
-					nObj.obj->setObjectIndex(obj_pass_index);
 					break;
 		case VTRIM:
 		case MTRIM:	nObj.mobj = new meshObject_t(triangles, hasUV, hasOrco);
 					nObj.mobj->setVisibility( !(type & INVISIBLEM) );
-					nObj.obj->setObjectIndex(obj_pass_index);
 					break;
 		default: return false;
 	}
@@ -347,7 +324,7 @@ void scene_t::setNumThreads(int threads)
 
 	if(nthreads == -1) //Automatic detection of number of threads supported by this system, taken from Blender. (DT)
 	{
-		Y_VERBOSE << "Automatic Detection of Threads: Active." << yendl;
+		Y_INFO << "Automatic Detection of Threads: Active." << yendl;
 
 #ifdef WIN32
 		SYSTEM_INFO info;
@@ -361,7 +338,7 @@ void scene_t::setNumThreads(int threads)
 		mib[0] = CTL_HW;
 		mib[1] = HW_NCPU;
 		len = sizeof(int);
-		sysctl(mib, 2, &nthreads, &len, nullptr, 0);
+		sysctl(mib, 2, &nthreads, &len, NULL, 0);
 	#	elif defined(__sgi)
 		nthreads = sysconf(_SC_NPROC_ONLN);
 	#	else
@@ -369,69 +346,26 @@ void scene_t::setNumThreads(int threads)
 	#	endif
 #endif
 
-		Y_VERBOSE << "Number of Threads supported: [" << nthreads << "]." << yendl;
+		Y_INFO << "Number of Threads supported: [" << nthreads << "]." << yendl;
 	}
 	else
 	{
-		Y_VERBOSE << "Automatic Detection of Threads: Inactive." << yendl;
+		Y_INFO << "Automatic Detection of Threads: Inactive." << yendl;
 	}
 
-	Y_PARAMS << "Using [" << nthreads << "] Threads." << yendl;
-	
-	std::stringstream set;
-	set << "CPU threads=" << nthreads << std::endl;
-	
-	yafLog.appendRenderSettings(set.str());
-}
-
-void scene_t::setNumThreadsPhotons(int threads_photons)
-{
-	nthreads_photons = threads_photons;
-
-	if(nthreads_photons == -1) //Automatic detection of number of threads supported by this system, taken from Blender. (DT)
-	{
-		Y_VERBOSE << "Automatic Detection of Threads for Photon Mapping: Active." << yendl;
-
-#ifdef WIN32
-		SYSTEM_INFO info;
-		GetSystemInfo(&info);
-		nthreads_photons = (int) info.dwNumberOfProcessors;
-#else
-	#	ifdef __APPLE__
-		int mib[2];
-		size_t len;
-
-		mib[0] = CTL_HW;
-		mib[1] = HW_NCPU;
-		len = sizeof(int);
-		sysctl(mib, 2, &nthreads_photons, &len, nullptr, 0);
-	#	elif defined(__sgi)
-		nthreads_photons = sysconf(_SC_NPROC_ONLN);
-	#	else
-		nthreads_photons = (int)sysconf(_SC_NPROCESSORS_ONLN);
-	#	endif
-#endif
-
-		Y_VERBOSE << "Number of Threads supported for Photon Mapping: [" << nthreads_photons << "]." << yendl;
-	}
-	else
-	{
-		Y_VERBOSE << "Automatic Detection of Threads for Photon Mapping: Inactive." << yendl;
-	}
-
-	Y_PARAMS << "Using for Photon Mapping [" << nthreads_photons << "] Threads." << yendl;
+	Y_INFO << "Using [" << nthreads << "] Threads." << yendl;
 }
 
 #define prepareEdges(q, v1, v2) e1 = vertices[v1] - vertices[q]; \
 			e2 = vertices[v2] - vertices[q];
 
-bool scene_t::smoothMesh(objID_t id, float angle)
+bool scene_t::smoothMesh(objID_t id, PFLOAT angle)
 {
 	if( state.stack.front() != GEOMETRY ) return false;
 	objData_t *odat;
 	if(id)
 	{
-		auto it = meshes.find(id);
+		std::map<objID_t, objData_t>::iterator it = meshes.find(id);
 		if(it == meshes.end() ) return false;
 		odat = &(it->second);
 	}
@@ -491,7 +425,7 @@ bool scene_t::smoothMesh(objID_t id, float angle)
 	}
 	else if(angle>0.1)// angle dependant smoothing
 	{
-		float thresh = fCos(degToRad(angle));
+		PFLOAT thresh = fCos(degToRad(angle));
 		std::vector<vector3d_t> vnormals;
 		std::vector<int> vn_index;
 		// create list of faces that include given vertex
@@ -517,7 +451,7 @@ bool scene_t::smoothMesh(objID_t id, float angle)
 		{
 			std::vector<triangle_t*> &tris = vface[i];
 			int j = 0;
-			for(auto fi=tris.begin(); fi!=tris.end(); ++fi)
+			for(std::vector<triangle_t*>::iterator fi=tris.begin(); fi!=tris.end(); ++fi)
 			{
 				triangle_t* f = *fi;
 				bool smooth = false;
@@ -527,7 +461,7 @@ bool scene_t::smoothMesh(objID_t id, float angle)
 				fnorm = f->getNormal();
 				vnorm = fnorm * alphas[i][j];
                 int k = 0;
-				for(auto f2=tris.begin(); f2!=tris.end(); ++f2)
+				for(std::vector<triangle_t*>::iterator f2=tris.begin(); f2!=tris.end(); ++f2)
 				{
 					if(**fi == **f2)
 					{
@@ -731,7 +665,6 @@ bool scene_t::addLight(light_t *l)
 {
 	if(l != 0)
 	{
-		if(!l->lightEnabled()) return false; //if a light is disabled, don't add it to the list of lights
 		lights.push_back(l);
 		state.changes |= C_LIGHT;
 		return true;
@@ -775,13 +708,13 @@ background_t* scene_t::getBackground() const
 
 triangleObject_t* scene_t::getMesh(objID_t id) const
 {
-	auto i = meshes.find(id);
+	std::map<objID_t, objData_t>::const_iterator i = meshes.find(id);
 	return (i==meshes.end()) ? 0 : i->second.obj;
 }
 
 object3d_t* scene_t::getObject(objID_t id) const
 {
-	auto i = meshes.find(id);
+	std::map<objID_t, objData_t>::const_iterator i = meshes.find(id);
 	if(i != meshes.end())
 	{
 		if(i->second.type == TRIM) return i->second.obj;
@@ -789,10 +722,10 @@ object3d_t* scene_t::getObject(objID_t id) const
 	}
 	else
 	{
-		auto oi = objects.find(id);
+		std::map<objID_t, object3d_t *>::const_iterator oi = objects.find(id);
 		if(oi != objects.end() ) return oi->second;
 	}
-	return nullptr;
+	return 0;
 }
 
 bound_t scene_t::getSceneBound() const
@@ -800,23 +733,12 @@ bound_t scene_t::getSceneBound() const
 	return sceneBound;
 }
 
-void scene_t::setAntialiasing(int numSamples, int numPasses, int incSamples, double threshold, float resampled_floor, float sample_multiplier_factor, float light_sample_multiplier_factor, float indirect_sample_multiplier_factor, bool detect_color_noise, int dark_detection_type, float dark_threshold_factor, int variance_edge_size, int variance_pixels, float clamp_samples, float clamp_indirect)
+void scene_t::setAntialiasing(int numSamples, int numPasses, int incSamples, double threshold)
 {
 	AA_samples = std::max(1, numSamples);
 	AA_passes = numPasses;
 	AA_inc_samples = (incSamples > 0) ? incSamples : AA_samples;
-	AA_threshold = (float)threshold;
-	AA_resampled_floor = resampled_floor;
-	AA_sample_multiplier_factor = sample_multiplier_factor;
-	AA_light_sample_multiplier_factor = light_sample_multiplier_factor;
-	AA_indirect_sample_multiplier_factor = indirect_sample_multiplier_factor;
-	AA_detect_color_noise = detect_color_noise;
-	AA_dark_detection_type = dark_detection_type;
-	AA_dark_threshold_factor = dark_threshold_factor;
-	AA_variance_edge_size = variance_edge_size;
-	AA_variance_pixels = variance_pixels;
-	AA_clamp_samples = clamp_samples;
-	AA_clamp_indirect = clamp_indirect;
+	AA_threshold = (CFLOAT)threshold;
 }
 
 /*! update scene state to prepare for rendering.
@@ -825,17 +747,17 @@ void scene_t::setAntialiasing(int numSamples, int numPasses, int incSamples, dou
 */
 bool scene_t::update()
 {
-	Y_VERBOSE << "Scene: Mode \"" << ((mode == 0) ? "Triangle" : "Universal" ) << "\"" << yendl;
+	Y_INFO << "Scene: Mode \"" << ((mode == 0) ? "Triangle" : "Universal" ) << "\"" << yendl;
 	if(!camera || !imageFilm) return false;
 	if(state.changes & C_GEOM)
 	{
 		if(tree) delete tree;
 		if(vtree) delete vtree;
-		tree = nullptr, vtree = nullptr;
+		tree = 0, vtree = 0;
 		int nprims=0;
 		if(mode==0)
 		{
-			for(auto i=meshes.begin(); i!=meshes.end(); ++i)
+			for(std::map<objID_t, objData_t>::iterator i=meshes.begin(); i!=meshes.end(); ++i)
 			{
                 objData_t &dat = (*i).second;
 
@@ -848,7 +770,7 @@ bool scene_t::update()
 			{
 				const triangle_t **tris = new const triangle_t*[nprims];
 				const triangle_t **insert = tris;
-				for(auto i=meshes.begin(); i!=meshes.end(); ++i)
+				for(std::map<objID_t, objData_t>::iterator i=meshes.begin(); i!=meshes.end(); ++i)
 				{
 					objData_t &dat = (*i).second;
 
@@ -860,26 +782,21 @@ bool scene_t::update()
 				tree = new triKdTree_t(tris, nprims, -1, 1, 0.8, 0.33 /* -1, 1.2, 0.40 */ );
 				delete [] tris;
 				sceneBound = tree->getBound();
-				Y_VERBOSE << "Scene: New scene bound is:" <<
+				Y_INFO << "Scene: New scene bound is:" <<
 				"(" << sceneBound.a.x << ", " << sceneBound.a.y << ", " << sceneBound.a.z << "), (" <<
 				sceneBound.g.x << ", " << sceneBound.g.y << ", " << sceneBound.g.z << ")" << yendl;
-
-				if(shadowBiasAuto) shadowBias = YAF_SHADOW_BIAS;
-				if(rayMinDistAuto) rayMinDist = MIN_RAYDIST;
-
-				Y_INFO << "Scene: total scene dimensions: X=" << sceneBound.longX() << ", Y=" << sceneBound.longY() << ", Z=" << sceneBound.longZ() << ", volume=" << sceneBound.vol() << ", Shadow Bias=" << shadowBias << (shadowBiasAuto ? " (auto)":"") << ", Ray Min Dist=" << rayMinDist << (rayMinDistAuto ? " (auto)":"") << yendl;
 			}
 			else Y_WARNING << "Scene: Scene is empty..." << yendl;
 		}
 		else
 		{
-			for(auto i=meshes.begin(); i!=meshes.end(); ++i)
+			for(std::map<objID_t, objData_t>::iterator i=meshes.begin(); i!=meshes.end(); ++i)
 			{
 				objData_t &dat = (*i).second;
 				if(dat.type != TRIM) nprims += dat.mobj->numPrimitives();
 			}
 			// include all non-mesh objects; eventually make a common map...
-			for(auto i=objects.begin(); i!=objects.end(); ++i)
+			for(std::map<objID_t, object3d_t *>::iterator i=objects.begin(); i!=objects.end(); ++i)
 			{
 				nprims += i->second->numPrimitives();
 			}
@@ -887,27 +804,21 @@ bool scene_t::update()
 			{
 				const primitive_t **tris = new const primitive_t*[nprims];
 				const primitive_t **insert = tris;
-				for(auto i=meshes.begin(); i!=meshes.end(); ++i)
+				for(std::map<objID_t, objData_t>::iterator i=meshes.begin(); i!=meshes.end(); ++i)
 				{
 					objData_t &dat = (*i).second;
 					if(dat.type != TRIM) insert += dat.mobj->getPrimitives(insert);
 				}
-				for(auto i=objects.begin(); i!=objects.end(); ++i)
+				for(std::map<objID_t, object3d_t *>::iterator i=objects.begin(); i!=objects.end(); ++i)
 				{
 					insert += i->second->getPrimitives(insert);
 				}
 				vtree = new kdTree_t<primitive_t>(tris, nprims, -1, 1, 0.8, 0.33 /* -1, 1.2, 0.40 */ );
 				delete [] tris;
 				sceneBound = vtree->getBound();
-				Y_VERBOSE << "Scene: New scene bound is:" << yendl <<
+				Y_INFO << "Scene: New scene bound is:" << yendl <<
 				"(" << sceneBound.a.x << ", " << sceneBound.a.y << ", " << sceneBound.a.z << "), (" <<
 				sceneBound.g.x << ", " << sceneBound.g.y << ", " << sceneBound.g.z << ")" << yendl;
-
-				if(shadowBiasAuto) shadowBias = YAF_SHADOW_BIAS;
-				if(rayMinDistAuto) rayMinDist = MIN_RAYDIST;
-
-				Y_INFO << "Scene: total scene dimensions: X=" << sceneBound.longX() << ", Y=" << sceneBound.longY() << ", Z=" << sceneBound.longZ() << ", volume=" << sceneBound.vol() << ", Shadow Bias=" << shadowBias << (shadowBiasAuto ? " (auto)":"") << ", Ray Min Dist=" << rayMinDist << (rayMinDistAuto ? " (auto)":"") << yendl;
-				
 			}
 			else Y_ERROR << "Scene: Scene is empty..." << yendl;
 		}
@@ -927,6 +838,9 @@ bool scene_t::update()
 
 		bool success = (surfIntegrator->preprocess() && volIntegrator->preprocess());
 
+		inteSettings << surfIntegrator->getName() << " (" << surfIntegrator->getSettings() << ")";
+		imageFilm->setIntegParams(inteSettings.str());
+
 		if(!success) return false;
 	}
 
@@ -937,9 +851,9 @@ bool scene_t::update()
 
 bool scene_t::intersect(const ray_t &ray, surfacePoint_t &sp) const
 {
-	float dis, Z;
+	PFLOAT dis, Z;
 	intersectData_t data;
-	if(ray.tmax<0) dis=std::numeric_limits<float>::infinity();
+	if(ray.tmax<0) dis=std::numeric_limits<PFLOAT>::infinity();
 	else dis=ray.tmax;
 	// intersect with tree:
 	if(mode == 0)
@@ -950,7 +864,6 @@ bool scene_t::intersect(const ray_t &ray, surfacePoint_t &sp) const
 		point3d_t h=ray.from + Z*ray.dir;
 		hitt->getSurface(sp, h, data);
 		sp.origin = hitt;
-		sp.data = data;
 	}
 	else
 	{
@@ -960,52 +873,40 @@ bool scene_t::intersect(const ray_t &ray, surfacePoint_t &sp) const
 		point3d_t h=ray.from + Z*ray.dir;
 		hitprim->getSurface(sp, h, data);
 		sp.origin = hitprim;
-		sp.data = data;
 	}
 	ray.tmax = Z;
 	return true;
 }
 
-bool scene_t::isShadowed(renderState_t &state, const ray_t &ray, float &obj_index, float &mat_index) const
+bool scene_t::isShadowed(renderState_t &state, const ray_t &ray) const
 {
 
 	ray_t sray(ray);
-	sray.from += sray.dir * sray.tmin;
+	sray.from += sray.dir * sray.tmin; //argh...kill that!
 	sray.time = state.time;
-	float dis;
-	if(ray.tmax<0)	dis=std::numeric_limits<float>::infinity();
+	PFLOAT dis;
+	if(ray.tmax<0)	dis=std::numeric_limits<PFLOAT>::infinity();
 	else  dis = sray.tmax - 2*sray.tmin;
 	if(mode==0)
 	{
 		triangle_t *hitt=0;
 		if(!tree) return false;
-		bool shadowed = tree->IntersectS(sray, dis, &hitt, shadowBias);
-		if(hitt)
-		{
-			if(hitt->getMesh()) obj_index = hitt->getMesh()->getAbsObjectIndex();	//Object index of the object casting the shadow
-			if(hitt->getMaterial()) mat_index = hitt->getMaterial()->getAbsMaterialIndex();	//Material index of the object casting the shadow
-		}
-		return shadowed;
+		return tree->IntersectS(sray, dis, &hitt);
 	}
 	else
 	{
 		primitive_t *hitt=0;
 		if(!vtree) return false;
-		bool shadowed = vtree->IntersectS(sray, dis, &hitt, shadowBias);
-		if(hitt)
-		{
-			if(hitt->getMaterial()) mat_index = hitt->getMaterial()->getAbsMaterialIndex();	//Material index of the object casting the shadow
-		}
-		return shadowed;
+		return vtree->IntersectS(sray, dis, &hitt);
 	}
 }
 
-bool scene_t::isShadowed(renderState_t &state, const ray_t &ray, int maxDepth, color_t &filt, float &obj_index, float &mat_index) const
+bool scene_t::isShadowed(renderState_t &state, const ray_t &ray, int maxDepth, color_t &filt) const
 {
 	ray_t sray(ray);
-	sray.from += sray.dir * sray.tmin;
-	float dis;
-	if(ray.tmax<0)	dis=std::numeric_limits<float>::infinity();
+	sray.from += sray.dir * sray.tmin; //argh...kill that!
+	PFLOAT dis;
+	if(ray.tmax<0)	dis=std::numeric_limits<PFLOAT>::infinity();
 	else  dis = sray.tmax - 2*sray.tmin;
 	filt = color_t(1.0);
 	void *odat = state.userdata;
@@ -1015,31 +916,17 @@ bool scene_t::isShadowed(renderState_t &state, const ray_t &ray, int maxDepth, c
 	if(mode==0)
 	{
 		triangle_t *hitt=0;
-		if(tree) 
-		{
-			isect = tree->IntersectTS(state, sray, maxDepth, dis, &hitt, filt, shadowBias);
-			if(hitt)
-			{
-				if(hitt->getMesh()) obj_index = hitt->getMesh()->getAbsObjectIndex();	//Object index of the object casting the shadow
-				if(hitt->getMaterial()) mat_index = hitt->getMaterial()->getAbsMaterialIndex();	//Material index of the object casting the shadow
-			}
-		}
+		if(tree) isect = tree->IntersectTS(state, sray, maxDepth, dis, &hitt, filt);
 	}
 	else
 	{
 		primitive_t *hitt=0;
-		if(vtree)
-		{
-			isect = vtree->IntersectTS(state, sray, maxDepth, dis, &hitt, filt, shadowBias);
-			if(hitt)
-			{
-				if(hitt->getMaterial()) mat_index = hitt->getMaterial()->getAbsMaterialIndex();	//Material index of the object casting the shadow
-			}
-		}
+		if(vtree) isect = vtree->IntersectTS(state, sray, maxDepth, dis, &hitt, filt);
 	}
 	state.userdata = odat;
 	return isect;
 }
+
 
 bool scene_t::render()
 {
@@ -1047,29 +934,13 @@ bool scene_t::render()
 	signals = 0;
 	sig_mutex.unlock();
 
-	bool success = false;
-	
-	const std::map<std::string,camera_t *> *camera_table = env->getCameraTable();
+	if(!update()) return false;
 
-	if(camera_table->size() == 0)
-	{
-		Y_ERROR << "No cameras/views found, exiting." << yendl;
-		return false;
-	}
+	bool success = surfIntegrator->render(imageFilm);
 
-	for(auto cam_table_entry = camera_table->begin(); cam_table_entry != camera_table->end(); ++cam_table_entry)
-    {
-		int numView = distance(camera_table->begin(), cam_table_entry);
-		camera_t* cam = cam_table_entry->second;
-		setCamera(cam);
-		if(!update()) return false;
+	surfIntegrator->cleanup();
+	imageFilm->flush();
 
-		success = surfIntegrator->render(numView, imageFilm);
-
-		surfIntegrator->cleanup();
-		imageFilm->flush(numView);
-    }
-    	
 	return success;
 }
 
@@ -1135,9 +1006,5 @@ bool scene_t::addInstance(objID_t baseObjectId, matrix4x4_t objToWorld)
 		return false;
 	}
 }
-
-const renderPasses_t* scene_t::getRenderPasses() const { return env->getRenderPasses(); }
-bool scene_t::pass_enabled(intPassTypes_t intPassType) const { return env->getRenderPasses()->pass_enabled(intPassType); }
-
 
 __END_YAFRAY

@@ -23,9 +23,6 @@
 #include <core_api/environment.h>
 #include <core_api/imagehandler.h>
 #include <core_api/params.h>
-#include <core_api/scene.h>
-#include <utilities/math_utils.h>
-#include <utilities/fileUtils.h>
 
 #include <png.h>
 
@@ -45,16 +42,15 @@ class pngHandler_t: public imageHandler_t
 public:
 	pngHandler_t();
 	~pngHandler_t();
-	void initForOutput(int width, int height, const renderPasses_t *renderPasses, bool denoiseEnabled, int denoiseHLum, int denoiseHCol, float denoiseMix, bool withAlpha = false, bool multi_layer = false);
+	void initForOutput(int width, int height, bool withAlpha = false, bool withDepth = false);
 	bool loadFromFile(const std::string &name);
 	bool loadFromMemory(const yByte *data, size_t size);
-	bool saveToFile(const std::string &name, int imagePassNumber = 0);
-	void putPixel(int x, int y, const colorA_t &rgba, int imagePassNumber = 0);
-	colorA_t getPixel(int x, int y, int imagePassNumber = 0);
+	bool saveToFile(const std::string &name);
+	void putPixel(int x, int y, const colorA_t &rgba, float depth = 0.f);
+	colorA_t getPixel(int x, int y);
 	static imageHandler_t *factory(paraMap_t &params, renderEnvironment_t &render);
 private:
 	void readFromStructs(png_structp pngPtr, png_infop infoPtr);
-	void readFromStructsOptimized(png_structp pngPtr, png_infop infoPtr);
 	bool fillReadStructs(yByte *sig, png_structp &pngPtr, png_infop &infoPtr);
 	bool fillWriteStructs(FILE* fp, unsigned int colorType, png_structp &pngPtr, png_infop &infoPtr);
 };
@@ -64,85 +60,60 @@ pngHandler_t::pngHandler_t()
 	m_width = 0;
 	m_height = 0;
 	m_hasAlpha = false;
-	m_MultiLayer = false;
-	
-	handlerName = "PNGHandler";
+	m_hasDepth = false;
 
-	rgbOptimizedBuffer = nullptr;
-	rgbCompressedBuffer = nullptr;
-	rgbaOptimizedBuffer = nullptr;
-	rgbaCompressedBuffer = nullptr;
+	m_rgba = NULL;
+	m_depth = NULL;
+
+	handlerName = "PNGHandler";
 }
 
-void pngHandler_t::initForOutput(int width, int height, const renderPasses_t *renderPasses, bool denoiseEnabled, int denoiseHLum, int denoiseHCol, float denoiseMix, bool withAlpha, bool multi_layer)
+void pngHandler_t::initForOutput(int width, int height, bool withAlpha, bool withDepth)
 {
 	m_width = width;
 	m_height = height;
 	m_hasAlpha = withAlpha;
-    m_MultiLayer = multi_layer;
-	m_Denoise = denoiseEnabled;
-	m_DenoiseHLum = denoiseHLum;
-	m_DenoiseHCol = denoiseHCol;
-	m_DenoiseMix = denoiseMix;
+	m_hasDepth = withDepth;
 
-	imagePasses.resize(renderPasses->extPassesSize());
-	
-	for(size_t idx = 0; idx < imagePasses.size(); ++idx)
+	m_rgba = new rgba2DImage_nw_t(m_width, m_height);
+
+	if(m_hasDepth)
 	{
-		imagePasses.at(idx) = new rgba2DImage_nw_t(m_width, m_height);
+		m_depth = new gray2DImage_nw_t(m_width, m_height);
 	}
 }
 
 pngHandler_t::~pngHandler_t()
 {
-	if(!imagePasses.empty())
-	{
-		for(size_t idx = 0; idx < imagePasses.size(); ++idx)
-		{
-			if(imagePasses.at(idx)) delete imagePasses.at(idx);
-			imagePasses.at(idx) = nullptr;
-		}
-	}
+	if(m_rgba) delete m_rgba;
+	if(m_depth) delete m_depth;
+	m_rgba = NULL;
+	m_depth = NULL;
 
-	if(rgbOptimizedBuffer) delete rgbOptimizedBuffer;
-	if(rgbCompressedBuffer) delete rgbCompressedBuffer;
-	if(rgbaOptimizedBuffer) delete rgbaOptimizedBuffer;
-	if(rgbaCompressedBuffer) delete rgbaCompressedBuffer;
-
-	rgbOptimizedBuffer = nullptr;
-	rgbCompressedBuffer = nullptr;
-	rgbaOptimizedBuffer = nullptr;
-	rgbaCompressedBuffer = nullptr;	
 }
 
-void pngHandler_t::putPixel(int x, int y, const colorA_t &rgba, int imagePassNumber)
+void pngHandler_t::putPixel(int x, int y, const colorA_t &rgba, float depth)
 {
-	(*imagePasses.at(imagePassNumber))(x, y) = rgba;
+	(*m_rgba)(x, y) = rgba;
+	if(m_hasDepth) (*m_depth)(x, y) = depth;
 }
 
-colorA_t pngHandler_t::getPixel(int x, int y, int imagePassNumber)
+colorA_t pngHandler_t::getPixel(int x, int y)
 {
-	if(rgbOptimizedBuffer) return (*rgbOptimizedBuffer)(x, y).getColor();
-	else if(rgbCompressedBuffer) return (*rgbCompressedBuffer)(x, y).getColor();
-	else if(rgbaOptimizedBuffer) return (*rgbaOptimizedBuffer)(x, y).getColor();
-	else if(rgbaCompressedBuffer) return (*rgbaCompressedBuffer)(x, y).getColor();
-	else if(!imagePasses.empty() && imagePasses.at(0)) return (*imagePasses.at(0))(x, y);
-	else return colorA_t(0.f);	//This should not happen, but just in case
+	return (*m_rgba)(x, y);
 }
 
-bool pngHandler_t::saveToFile(const std::string &name, int imagePassNumber)
+bool pngHandler_t::saveToFile(const std::string &name)
 {
-	std::string nameWithoutTmp = name;
-	nameWithoutTmp.erase(nameWithoutTmp.length()-4);
-	if(session.renderInProgress()) Y_INFO << handlerName << ": Autosaving partial render (" << RoundFloatPrecision(session.currentPassPercent(), 0.01) << "% of pass " << session.currentPass() << " of " << session.totalPasses() << ") RGB" << ( m_hasAlpha ? "A" : "" ) << " file as \"" << nameWithoutTmp << "\"...  " << getDenoiseParams() << yendl;
-	else Y_INFO << handlerName << ": Saving RGB" << ( m_hasAlpha ? "A" : "" ) << " file as \"" << nameWithoutTmp << "\"...  " << getDenoiseParams() << yendl;
+	Y_INFO << handlerName << ": Saving RGB" << ( m_hasAlpha ? "A" : "" ) << " file as \"" << name << "\"..." << yendl;
 
+	FILE *fp;
 	png_structp pngPtr;
 	png_infop infoPtr;
 	int channels;
-	png_bytep *rowPointers = nullptr;
+	png_bytep *rowPointers = NULL;
 
-	FILE * fp = fileUnicodeOpen(name, "wb");
+	fp = fopen(name.c_str(), "wb");
 
 	if(!fp)
 	{
@@ -152,7 +123,7 @@ bool pngHandler_t::saveToFile(const std::string &name, int imagePassNumber)
 
 	if(!fillWriteStructs(fp, (m_hasAlpha) ? PNG_COLOR_TYPE_RGB_ALPHA : PNG_COLOR_TYPE_RGB, pngPtr, infoPtr))
 	{
-		fileUnicodeClose(fp);
+		fclose(fp);
 		return false;
 	}
 
@@ -166,73 +137,30 @@ bool pngHandler_t::saveToFile(const std::string &name, int imagePassNumber)
 	{
 		rowPointers[i] = new yByte[ m_width * channels ];
 	}
-	
-	Y_DEBUG << "m_Denoise="<<m_Denoise<<" m_DenoiseHLum="<<m_DenoiseHLum<<" m_DenoiseHCol="<<m_DenoiseHCol<<yendl;
 
-	if(m_Denoise)
+	for(int y = 0; y < m_height; y++)
 	{
-		cv::Mat A(m_height, m_width, CV_8UC3);
-		cv::Mat B(m_height, m_width, CV_8UC3);
-		cv::Mat_<cv::Vec3b> _A = A;
-		cv::Mat_<cv::Vec3b> _B = B;
-		
-		for(int y = 0; y < m_height; y++)
+		for(int x = 0; x < m_width; x++)
 		{
-			for(int x = 0; x < m_width; x++)
-			{
-				colorA_t &color = (*imagePasses.at(imagePassNumber))(x, y);
-				color.clampRGBA01();
+			colorA_t &color = (*m_rgba)(x, y);
+			color.clampRGBA01();
 
-				_A(y, x)[0] = (color.getR() * 255);
-				_A(y, x)[1] = (color.getG() * 255);
-				_A(y, x)[2] = (color.getB() * 255);
-			}
-		}
+			int i = x * channels;
 
-		cv::fastNlMeansDenoisingColored(A, B, m_DenoiseHLum, m_DenoiseHCol, 7, 21);
-
-		for(int y = 0; y < m_height; y++)
-		{
-			for(int x = 0; x < m_width; x++)
-			{
-				colorA_t &color = (*imagePasses.at(imagePassNumber))(x, y);
-				color.clampRGBA01();
-
-				int i = x * channels;
-
-				rowPointers[y][i]   = (yByte) (m_DenoiseMix * _B(y, x)[0] + (1.f-m_DenoiseMix) * _A(y, x)[0]);
-				rowPointers[y][i+1] = (yByte) (m_DenoiseMix * _B(y, x)[1] + (1.f-m_DenoiseMix) * _A(y, x)[1]);
-				rowPointers[y][i+2] = (yByte) (m_DenoiseMix * _B(y, x)[2] + (1.f-m_DenoiseMix) * _A(y, x)[2]);
-				if(m_hasAlpha) rowPointers[y][i+3] = (yByte)(color.getA() * 255.f);
-			}
+			rowPointers[y][i]   = (yByte)(color.getR() * 255.f);
+			rowPointers[y][i+1] = (yByte)(color.getG() * 255.f);
+			rowPointers[y][i+2] = (yByte)(color.getB() * 255.f);
+			if(m_hasAlpha) rowPointers[y][i+3] = (yByte)(color.getA() * 255.f);
 		}
 	}
-	else
-	{
-		for(int y = 0; y < m_height; y++)
-		{
-			for(int x = 0; x < m_width; x++)
-			{
-				colorA_t &color = (*imagePasses.at(imagePassNumber))(x, y);
-				color.clampRGBA01();
 
-				int i = x * channels;
-
-				rowPointers[y][i]   = (yByte)(color.getR() * 255.f);
-				rowPointers[y][i+1] = (yByte)(color.getG() * 255.f);
-				rowPointers[y][i+2] = (yByte)(color.getB() * 255.f);
-				if(m_hasAlpha) rowPointers[y][i+3] = (yByte)(color.getA() * 255.f);
-			}
-		}
-	}
-	
 	png_write_image(pngPtr, rowPointers);
 
-	png_write_end(pngPtr, nullptr);
+	png_write_end(pngPtr, NULL);
 
 	png_destroy_write_struct(&pngPtr, &infoPtr);
 
-	fileUnicodeClose(fp);
+	fclose(fp);
 
 	// cleanup:
 	for(int i = 0; i < m_height; i++)
@@ -242,19 +170,73 @@ bool pngHandler_t::saveToFile(const std::string &name, int imagePassNumber)
 
 	delete[] rowPointers;
 
-	Y_VERBOSE << handlerName << ": Done." << yendl;
+	if(m_hasDepth)
+	{
+		std::string zbufname = name.substr(0, name.size() - 4) + "_zbuffer.png";
+		Y_INFO << handlerName << ": Saving Z-Buffer as \"" << zbufname << "\"..." << yendl;
+
+		fp = fopen(zbufname.c_str(), "wb");
+
+		if(!fp)
+		{
+			Y_ERROR << handlerName << ": Cannot open file " << zbufname << yendl;
+			return false;
+		}
+
+		if(!fillWriteStructs(fp, PNG_COLOR_TYPE_GRAY, pngPtr, infoPtr))
+		{
+			fclose(fp);
+			return false;
+		}
+
+		rowPointers = new png_bytep[m_height];
+
+		for(int i = 0; i < m_height; i++)
+		{
+			rowPointers[i] = new yByte[ m_width ];
+		}
+
+
+		for(int y = 0; y < m_height; y++)
+		{
+			for(int x = 0; x < m_width; x++)
+			{
+				float color = std::max(0.f, std::min(1.f, (*m_depth)(x, y)));
+
+				rowPointers[y][x] = (yByte)(color * 255.f);
+			}
+		}
+
+		png_write_image(pngPtr, rowPointers);
+
+		png_write_end(pngPtr, NULL);
+
+		png_destroy_write_struct(&pngPtr, &infoPtr);
+
+		fclose(fp);
+
+		// cleanup:
+		for(int i = 0; i < m_height; i++)
+		{
+			delete [] rowPointers[i];
+		}
+
+		delete[] rowPointers;
+	}
+
+	Y_INFO << handlerName << ": Done." << yendl;
 
 	return true;
 }
 
 bool pngHandler_t::loadFromFile(const std::string &name)
 {
-	png_structp pngPtr = nullptr;
-	png_infop infoPtr = nullptr;
-
-	FILE *fp = fileUnicodeOpen(name, "rb");
-
 	Y_INFO << handlerName << ": Loading image \"" << name << "\"..." << yendl;
+
+	png_structp pngPtr = NULL;
+	png_infop infoPtr = NULL;
+
+	FILE *fp = fopen(name.c_str(), "rb");
 
 	if(!fp)
 	{
@@ -272,7 +254,7 @@ bool pngHandler_t::loadFromFile(const std::string &name)
 
     if(!fillReadStructs(signature, pngPtr, infoPtr))
     {
-    	fileUnicodeClose(fp);
+    	fclose(fp);
     	return false;
     }
 
@@ -282,16 +264,16 @@ bool pngHandler_t::loadFromFile(const std::string &name)
 
 	readFromStructs(pngPtr, infoPtr);
 
-	fileUnicodeClose(fp);
+	fclose(fp);
 
-	Y_VERBOSE << handlerName << ": Done." << yendl;
+	Y_INFO << handlerName << ": Done." << yendl;
 
 	return true;
 }
 bool pngHandler_t::loadFromMemory(const yByte *data, size_t size)
 {
-	png_structp pngPtr = nullptr;
-	png_infop infoPtr = nullptr;
+	png_structp pngPtr = NULL;
+	png_infop infoPtr = NULL;
 
 	pngDataReader_t *reader = new pngDataReader_t(data, size);
 
@@ -328,7 +310,7 @@ bool pngHandler_t::fillReadStructs(yByte *sig, png_structp &pngPtr, png_infop &i
     	return false;
     }
 
-	if(!(pngPtr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr)))
+	if(!(pngPtr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL)))
 	{
 		Y_ERROR << handlerName << ": Allocation of png struct failed!" << yendl;
 		return false;
@@ -336,14 +318,14 @@ bool pngHandler_t::fillReadStructs(yByte *sig, png_structp &pngPtr, png_infop &i
 
 	if(!(infoPtr = png_create_info_struct(pngPtr)))
 	{
-		png_destroy_read_struct(&pngPtr, nullptr, nullptr);
+		png_destroy_read_struct(&pngPtr, NULL, NULL);
 		Y_ERROR << handlerName << ": Allocation of png info failed!" << yendl;
 		return false;
 	}
 
 	if(setjmp(png_jmpbuf(pngPtr)))
 	{
-		png_destroy_read_struct(&pngPtr, &infoPtr, nullptr);
+		png_destroy_read_struct(&pngPtr, &infoPtr, NULL);
 		Y_ERROR << handlerName << ": Long jump triggered error!" << yendl;
 		return false;
 	}
@@ -353,7 +335,7 @@ bool pngHandler_t::fillReadStructs(yByte *sig, png_structp &pngPtr, png_infop &i
 
 bool pngHandler_t::fillWriteStructs(FILE* fp, unsigned int colorType, png_structp &pngPtr, png_infop &infoPtr)
 {
-	if(!(pngPtr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr)))
+	if(!(pngPtr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL)))
 	{
 		Y_ERROR << handlerName << ": Allocation of png struct failed!" << yendl;
 		return false;
@@ -361,14 +343,14 @@ bool pngHandler_t::fillWriteStructs(FILE* fp, unsigned int colorType, png_struct
 
 	if(!(infoPtr = png_create_info_struct(pngPtr)))
 	{
-		png_destroy_read_struct(&pngPtr, nullptr, nullptr);
+		png_destroy_read_struct(&pngPtr, NULL, NULL);
 		Y_ERROR << handlerName << ": Allocation of png info failed!" << yendl;
 		return false;
 	}
 
 	if(setjmp(png_jmpbuf(pngPtr)))
 	{
-		png_destroy_read_struct(&pngPtr, &infoPtr, nullptr);
+		png_destroy_read_struct(&pngPtr, &infoPtr, NULL);
 		Y_ERROR << handlerName << ": Long jump triggered error!" << yendl;
 		return false;
 	}
@@ -390,9 +372,11 @@ void pngHandler_t::readFromStructs(png_structp pngPtr, png_infop infoPtr)
 
 	int bitDepth, colorType;
 
+	m_hasDepth = false;
+
 	png_read_info(pngPtr, infoPtr);
 
-	png_get_IHDR(pngPtr, infoPtr, &w, &h, &bitDepth, &colorType, nullptr, nullptr, nullptr);
+	png_get_IHDR(pngPtr, infoPtr, &w, &h, &bitDepth, &colorType, NULL, NULL, NULL);
 
 	int numChan = png_get_channels(pngPtr, infoPtr);
 
@@ -431,29 +415,9 @@ void pngHandler_t::readFromStructs(png_structp pngPtr, png_infop infoPtr)
 	m_width = (int)w;
 	m_height = (int)h;
 
-	if(!imagePasses.empty())
-	{
-		for(size_t idx = 0; idx < imagePasses.size(); ++idx)
-		{
-			if(imagePasses.at(idx)) delete imagePasses.at(idx);
-		}
-		imagePasses.clear();
-	}
+	if(m_rgba) delete m_rgba;
+	m_rgba = new rgba2DImage_nw_t(m_width, m_height);
 
-	if(getTextureOptimization() == TEX_OPTIMIZATION_OPTIMIZED)
-	{
-		if(numChan == 4) rgbaOptimizedBuffer = new rgbaOptimizedImage_nw_t(m_width, m_height);
-		else rgbOptimizedBuffer = new rgbOptimizedImage_nw_t(m_width, m_height);
-	}
-	
-	else if(getTextureOptimization() == TEX_OPTIMIZATION_COMPRESSED)
-	{
-		if(numChan == 4) rgbaCompressedBuffer = new rgbaCompressedImage_nw_t(m_width, m_height);
-		else rgbCompressedBuffer = new rgbCompressedImage_nw_t(m_width, m_height);
-	}
-
-	else imagePasses.push_back(new rgba2DImage_nw_t(m_width, m_height));
-	
 	png_bytepp rowPointers = new png_bytep[m_height];
 
 	int bitMult = 1;
@@ -474,8 +438,8 @@ void pngHandler_t::readFromStructs(png_structp pngPtr, png_infop infoPtr)
 	{
 		for(int y = 0; y < m_height; y++)
 		{
-			colorA_t color;
-			
+			colorA_t &color = (*m_rgba)(x, y);
+
 			int i = x * numChan * bitMult;
 			float c = 0.f;
 
@@ -531,18 +495,12 @@ void pngHandler_t::readFromStructs(png_structp pngPtr, png_infop infoPtr)
 						break;
 				}
 			}
-			
-			if(rgbaOptimizedBuffer) (*rgbaOptimizedBuffer)(x, y).setColor(color);
-			else if(rgbaCompressedBuffer) (*rgbaCompressedBuffer)(x, y).setColor(color);
-			else if(rgbOptimizedBuffer) (*rgbOptimizedBuffer)(x, y).setColor(color);
-			else if(rgbCompressedBuffer) (*rgbCompressedBuffer)(x, y).setColor(color);
-			else if(!imagePasses.empty() && imagePasses.at(0)) (*imagePasses.at(0))(x, y) = color;			
 		}
 	}
 
 	png_read_end(pngPtr, infoPtr);
 
-	png_destroy_read_struct(&pngPtr, &infoPtr, nullptr);
+	png_destroy_read_struct(&pngPtr, &infoPtr, NULL);
 
 	// cleanup:
 	for(int i = 0; i < m_height; i++)
@@ -558,30 +516,18 @@ imageHandler_t *pngHandler_t::factory(paraMap_t &params, renderEnvironment_t &re
 	int width = 0;
 	int height = 0;
 	bool withAlpha = false;
+	bool withDepth = false;
 	bool forOutput = true;
-	bool denoiseEnabled = false;
-	int denoiseHLum = 3;
-	int denoiseHCol = 3;
-	float denoiseMix = 0.8f;
 
 	params.getParam("width", width);
 	params.getParam("height", height);
 	params.getParam("alpha_channel", withAlpha);
+	params.getParam("z_channel", withDepth);
 	params.getParam("for_output", forOutput);
-	params.getParam("denoiseEnabled", denoiseEnabled);
-	params.getParam("denoiseHLum", denoiseHLum);
-	params.getParam("denoiseHCol", denoiseHCol);
-	params.getParam("denoiseMix", denoiseMix);
-
-	Y_DEBUG << "denoiseEnabled="<<denoiseEnabled<<" denoiseHLum="<<denoiseHLum<<" denoiseHCol="<<denoiseHCol<<yendl;
 
 	imageHandler_t *ih = new pngHandler_t();
 
-	if(forOutput)
-	{
-		if(yafLog.getUseParamsBadge()) height += yafLog.getBadgeHeight();
-		ih->initForOutput(width, height, render.getRenderPasses(), denoiseEnabled, denoiseHLum, denoiseHCol, denoiseMix, withAlpha, false);
-	}
+	if(forOutput) ih->initForOutput(width, height, withAlpha, withDepth);
 
 	return ih;
 }

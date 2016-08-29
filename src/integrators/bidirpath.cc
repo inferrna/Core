@@ -756,7 +756,7 @@ CFLOAT biDirIntegrator_t::pathWeight(renderState_t &state, int s, int t, pathDat
 }
 
 // weight paths that directly hit a light, i.e. s=0; t is at least 2 //
-float biDirIntegrator_t::pathWeight_0t(renderState_t &state, int t, pathData_t &pd) const
+CFLOAT biDirIntegrator_t::pathWeight_0t(renderState_t &state, int t, pathData_t &pd) const
 {
     const std::vector<pathEvalVert_t> &path = pd.path;
     const pathVertex_t &vl = pd.eyePath[t-1];
@@ -919,122 +919,6 @@ color_t biDirIntegrator_t::evalPathE(renderState_t &state, int s, pathData_t &pd
     }
     return col/lightNumPdf;
 } */
-
-color_t biDirIntegrator_t::sampleAmbientOcclusionPass(renderState_t &state, const surfacePoint_t &sp, const vector3d_t &wo) const
-{
-	color_t col(0.f), surfCol(0.f), scol(0.f);
-	bool shadowed;
-	const material_t *material = sp.material;
-	ray_t lightRay;
-	lightRay.from = sp.P;
-	float mask_obj_index = 0.f, mask_mat_index = 0.f;
-
-	int n = aoSamples;//(int) ceilf(aoSamples*getSampleMultiplier());
-	if(state.rayDivision > 1) n = std::max(1, n / state.rayDivision);
-
-	unsigned int offs = n * state.pixelSample + state.samplingOffs;
-
-	Halton hal2(2);
-	Halton hal3(3);
-
-	hal2.setStart(offs-1);
-	hal3.setStart(offs-1);
-
-	for(int i = 0; i < n; ++i)
-	{
-		float s1 = hal2.getNext();
-		float s2 = hal3.getNext();
-
-		if(state.rayDivision > 1)
-		{
-			s1 = addMod1(s1, state.dc1);
-			s2 = addMod1(s2, state.dc2);
-		}
-
-		lightRay.tmax = aoDist;
-
-		float W = 0.f;
-
-		sample_t s(s1, s2, BSDF_GLOSSY | BSDF_DIFFUSE | BSDF_REFLECT );
-		surfCol = material->sample(state, sp, wo, lightRay.dir, s, W);
-
-		if(material->getFlags() & BSDF_EMIT)
-		{
-			col += material->emit(state, sp, wo) * s.pdf;
-		}
-
-		//shadowed = (trShad) ? scene->isShadowed(state, lightRay, sDepth, scol, mask_obj_index, mask_mat_index) : scene->isShadowed(state, lightRay, mask_obj_index, mask_mat_index);
-		shadowed = scene->isShadowed(state, lightRay, mask_obj_index, mask_mat_index);
-
-		if(!shadowed)
-		{
-			float cos = std::fabs(sp.N * lightRay.dir);
-			//if(trShad) col += aoCol * scol * surfCol * cos * W;
-			col += aoCol * surfCol * cos * W;
-		}
-	}
-
-	return col / (float)n;
-}
-
-
-color_t biDirIntegrator_t::sampleAmbientOcclusionPassClay(renderState_t &state, const surfacePoint_t &sp, const vector3d_t &wo) const
-{
-	color_t col(0.f), surfCol(0.f), scol(0.f);
-	bool shadowed;
-	const material_t *material = sp.material;
-	ray_t lightRay;
-	lightRay.from = sp.P;
-	float mask_obj_index = 0.f, mask_mat_index = 0.f;
-
-	int n = aoSamples;
-	if(state.rayDivision > 1) n = std::max(1, n / state.rayDivision);
-
-	unsigned int offs = n * state.pixelSample + state.samplingOffs;
-
-	Halton hal2(2);
-	Halton hal3(3);
-
-	hal2.setStart(offs-1);
-	hal3.setStart(offs-1);
-
-	for(int i = 0; i < n; ++i)
-	{
-		float s1 = hal2.getNext();
-		float s2 = hal3.getNext();
-
-		if(state.rayDivision > 1)
-		{
-			s1 = addMod1(s1, state.dc1);
-			s2 = addMod1(s2, state.dc2);
-		}
-
-		lightRay.tmax = aoDist;
-
-		float W = 0.f;
-
-		sample_t s(s1, s2, BSDF_ALL );
-		surfCol = material->sampleClay(state, sp, wo, lightRay.dir, s, W);
-		s.pdf = 1.f;
-
-		if(material->getFlags() & BSDF_EMIT)
-		{
-			col += material->emit(state, sp, wo) * s.pdf;
-		}
-
-		shadowed = scene->isShadowed(state, lightRay, mask_obj_index, mask_mat_index);
-
-		if(!shadowed)
-		{
-			float cos = std::fabs(sp.N * lightRay.dir);
-			//if(trShad) col += aoCol * scol * surfCol * cos * W;
-			col += aoCol * surfCol * cos * W;
-		}
-	}
-
-	return col / (float)n;
-}
-
 
 integrator_t* biDirIntegrator_t::factory(paraMap_t &params, renderEnvironment_t &render)
 {

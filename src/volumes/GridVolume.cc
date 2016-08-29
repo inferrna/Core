@@ -32,8 +32,8 @@
 
 __BEGIN_YAFRAY
 
-struct renderState_t;
-struct pSample_t;
+class renderState_t;
+class pSample_t;
 
 class GridVolume : public DensityVolume
 {

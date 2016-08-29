@@ -120,7 +120,7 @@ int triBoxClip(const double b_min[3], const double b_max[3], const double triver
 
 		if(nc>9)
 		{
-			Y_VERBOSE << "TriangleClip: after min n is now " << nc << ", that's bad!" << yendl;
+			Y_INFO << "TriangleClip: after min n is now " << nc << ", that's bad!" << yendl;
 			return 2;
 		}
 
@@ -181,7 +181,7 @@ int triBoxClip(const double b_min[3], const double b_max[3], const double triver
 
 		if(nc > 9)
 		{
-			Y_VERBOSE << "TriangleClip: After max n is now " << nc << ", that's bad!" << yendl;
+			Y_INFO << "TriangleClip: After max n is now " << nc << ", that's bad!" << yendl;
 			return 2;
 		}
 
@@ -196,14 +196,14 @@ int triBoxClip(const double b_min[3], const double b_max[3], const double triver
 	{
 		static bool foobar=false;
 		if(foobar) return 3;
-		Y_VERBOSE << "TriangleClip: Clip degenerated! n="<<n<<yendl;
-		Y_VERBOSE << "TriangleClip: b_min:\t" << b_min[0] << ",\t" << b_min[1] << ",\t" << b_min[2] << yendl;
-		Y_VERBOSE << "TriangleClip: b_max:\t" << b_max[0] << ",\t" << b_max[1] << ",\t" << b_max[2] << yendl;
-		Y_VERBOSE << "TriangleClip: delta:\t" << b_max[0]-b_min[0] << ",\t" << b_max[1]-b_min[1] << ",\t" << b_max[2]-b_min[2] << yendl;
+		Y_INFO << "TriangleClip: Clip degenerated! n="<<n<<yendl;
+		Y_INFO << "TriangleClip: b_min:\t" << b_min[0] << ",\t" << b_min[1] << ",\t" << b_min[2] << yendl;
+		Y_INFO << "TriangleClip: b_max:\t" << b_max[0] << ",\t" << b_max[1] << ",\t" << b_max[2] << yendl;
+		Y_INFO << "TriangleClip: delta:\t" << b_max[0]-b_min[0] << ",\t" << b_max[1]-b_min[1] << ",\t" << b_max[2]-b_min[2] << yendl;
 
 		for(int j=0;j<3;j++)
 		{
-			Y_VERBOSE << "TriangleClip: point" << j << ": " << triverts[j][0] << ",\t" << triverts[j][1] << ",\t" << triverts[j][2] << yendl;
+			Y_INFO << "TriangleClip: point" << j << ": " << triverts[j][0] << ",\t" << triverts[j][1] << ",\t" << triverts[j][2] << yendl;
 		}
 		foobar=true;
 		return 3;
@@ -302,7 +302,7 @@ int triPlaneClip(double pos, int axis, bool lower, bound_t &box, void* o_dat, vo
 
 		if(nc > 9)
 		{
-			Y_VERBOSE << "TriangleClip: After min n is now " << nc << ", that's bad!" << yendl;
+			Y_INFO << "TriangleClip: After min n is now " << nc << ", that's bad!" << yendl;
 			return 2;
 		}
 
@@ -366,7 +366,7 @@ int triPlaneClip(double pos, int axis, bool lower, bound_t &box, void* o_dat, vo
 
 		if(nc > 9)
 		{
-			Y_VERBOSE << "TriangleClip: after max n is now " << nc << ", that's bad!" << yendl;
+			Y_INFO << "TriangleClip: after max n is now " << nc << ", that's bad!" << yendl;
 			return 2;
 		}
 
@@ -379,7 +379,7 @@ int triPlaneClip(double pos, int axis, bool lower, bound_t &box, void* o_dat, vo
 	{
 		static bool foobar=false;
 		if(foobar) return 3;
-		Y_VERBOSE << "TriangleClip: Clip degenerated! n=" << n << yendl;
+		Y_INFO << "TriangleClip: Clip degenerated! n=" << n << yendl;
 		foobar=true;
 		return 3;
 	}

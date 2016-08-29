@@ -33,14 +33,12 @@ public:
 		optimize = opt;
 		adaptiveStepSize = sSize * 100.0f;
 
-		Y_PARAMS << "SingleScatter: stepSize: " << stepSize << " adaptive: " << adaptive << " optimize: " << optimize << yendl;
+		Y_INFO << "SingleScatter: stepSize: " << stepSize << " adaptive: " << adaptive << " optimize: " << optimize << yendl;
 	}
 
 	virtual bool preprocess()
 	{
 		Y_INFO << "SingleScatter: Preprocessing..." << yendl;
-
-		lights.clear();
 
 		for(unsigned int i=0;i<scene->lights.size();++i)
 		{
@@ -66,9 +64,9 @@ public:
 				float ySizeInv = 1.f/(float)ySize;
 				float zSizeInv = 1.f/(float)zSize;
 
-				Y_PARAMS << "SingleScatter: volume, attGridMaps with size: " << xSize << " " << ySize << " " << xSize << std::endl;
+				Y_INFO << "SingleScatter: volume, attGridMaps with size: " << xSize << " " << ySize << " " << xSize << std::endl;
 			
-				for(auto l=lights.begin(); l!=lights.end(); ++l)
+				for(std::vector<light_t *>::const_iterator l=lights.begin(); l!=lights.end(); ++l)
 				{
 					color_t lcol(0.0);
 
@@ -97,7 +95,7 @@ public:
 								if( (*l)->diracLight() )
 								{
 									bool ill = (*l)->illuminate(sp, lcol, lightRay);
-									lightRay.tmin = scene->shadowBias;
+									lightRay.tmin = YAF_SHADOW_BIAS; // < better add some _smart_ self-bias value...this is bad.
 									if (lightRay.tmax < 0.f) lightRay.tmax = 1e10; // infinitely distant light
 
 									// transmittance from the point p in the volume to the light (i.e. how much light reaches p)
@@ -126,7 +124,7 @@ public:
 										ls.s2 = 0.5f; //(*state.prng)();
 
 										(*l)->illumSample(sp, ls, lightRay);
-										lightRay.tmin = scene->shadowBias;
+										lightRay.tmin = YAF_SHADOW_BIAS;
 										if (lightRay.tmax < 0.f) lightRay.tmax = 1e10; // infinitely distant light
 
 										// transmittance from the point p in the volume to the light (i.e. how much light reaches p)
@@ -156,12 +154,11 @@ public:
 		color_t inScatter(0.f);
 		surfacePoint_t sp;
 		sp.P = stepRay.from;
-		float mask_obj_index = 0.f, mask_mat_index = 0.f;
 
 		ray_t lightRay;
 		lightRay.from = sp.P;
 
-		for(auto l=lights.begin(); l!=lights.end(); ++l)
+		for(std::vector<light_t *>::const_iterator l=lights.begin(); l!=lights.end(); ++l)
 		{
 			color_t lcol(0.0);
 
@@ -171,8 +168,9 @@ public:
 				if( (*l)->illuminate(sp, lcol, lightRay) )
 				{
 					// ...shadowed...
+					lightRay.tmin = YAF_SHADOW_BIAS; // < better add some _smart_ self-bias value...this is bad.
 					if (lightRay.tmax < 0.f) lightRay.tmax = 1e10; // infinitely distant light
-					bool shadowed = scene->isShadowed(state, lightRay, mask_obj_index, mask_mat_index);
+					bool shadowed = scene->isShadowed(state, lightRay);
 					if (!shadowed)
 					{
 						float lightTr = 0.0f;
@@ -184,7 +182,7 @@ public:
 							{
 								VolumeRegion* vr = listVR.at(i);
 								float t0Tmp = -1, t1Tmp = -1;
-								if (vr->intersect(lightRay, t0Tmp, t1Tmp)) lightTr += vr->attenuation(sp.P, (*l));
+								if (vr->intersect(lightRay, t0Tmp, t1Tmp)) lightTr += vr->attenuation(sp.P, (*l)) * iVRSize;
 							}
 						}
 						else
@@ -197,12 +195,14 @@ public:
 								float t0Tmp = -1, t1Tmp = -1;
 								if (listVR.at(i)->intersect(lightRay, t0Tmp, t1Tmp))
 								{
-									lightstepTau += vr->tau(lightRay, currentStep, 0.f);
+									lightstepTau += vr->tau(lightRay, currentStep, 0.f) * iVRSize;
 								}
 							}
 							// transmittance from the point p in the volume to the light (i.e. how much light reaches p)
 							lightTr = fExp(-lightstepTau.energy());
 						}
+						lightTr *= iVRSize;
+
 						inScatter += lightTr * lcol;
 					}
 				}
@@ -225,8 +225,9 @@ public:
 					if((*l)->illumSample(sp, ls, lightRay))
 					{
 						// ...shadowed...
+						lightRay.tmin = YAF_SHADOW_BIAS; // < better add some _smart_ self-bias value...this is bad.
 						if (lightRay.tmax < 0.f) lightRay.tmax = 1e10; // infinitely distant light
-						bool shadowed = scene->isShadowed(state, lightRay, mask_obj_index, mask_mat_index);
+						bool shadowed = scene->isShadowed(state, lightRay);
 						if(!shadowed) {
 							ccol += ls.col / ls.pdf;
 
@@ -240,7 +241,7 @@ public:
 									float t0Tmp = -1, t1Tmp = -1;
 									if (vr->intersect(lightRay, t0Tmp, t1Tmp))
 									{
-										lightTr += vr->attenuation(sp.P, (*l));
+										lightTr += vr->attenuation(sp.P, (*l)) * iVRSize;
 										break;
 									}
 								}
@@ -259,11 +260,12 @@ public:
 									}
 								}
 								// transmittance from the point p in the volume to the light (i.e. how much light reaches p)
-								lightTr += fExp(-lightstepTau.energy());
+								lightTr += fExp(-lightstepTau.energy()) * iVRSize;
 							}
 
 						}
 					}
+					lightTr *= iVRSize;
 				} // end of area light sample loop
 
 				lightTr *= iN;
@@ -300,7 +302,7 @@ public:
 	}
 	
 	// emission and in-scattering
-	virtual colorA_t integrate(renderState_t &state, ray_t &ray, colorPasses_t &colorPasses, int additionalDepth /*=0*/) const
+	virtual colorA_t integrate(renderState_t &state, ray_t &ray) const
 	{
 		float t0 = 1e10f, t1 = -1e10f;
 

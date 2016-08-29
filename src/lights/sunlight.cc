@@ -27,7 +27,7 @@ __BEGIN_YAFRAY
 class sunLight_t : public light_t
 {
   public:
-	sunLight_t(vector3d_t dir, const color_t &col, float inte, float angle, int nSamples, bool bLightEnabled=true, bool bCastShadows=true);
+	sunLight_t(vector3d_t dir, const color_t &col, CFLOAT inte, float angle, int nSamples);
 	virtual void init(scene_t &scene);
 	virtual color_t totalEnergy() const { return color * ePdf; }
 	virtual color_t emitPhoton(float s1, float s2, float s3, float s4, ray_t &ray, float &ipdf) const;
@@ -35,7 +35,7 @@ class sunLight_t : public light_t
 	virtual bool illumSample(const surfacePoint_t &sp, lSample_t &s, ray_t &wi) const;
 	virtual bool illuminate(const surfacePoint_t &sp, color_t &col, ray_t &wi) const{ return false; }
 	virtual bool canIntersect() const{ return true; }
-	virtual bool intersect(const ray_t &ray, float &t, color_t &col, float &ipdf) const;
+	virtual bool intersect(const ray_t &ray, PFLOAT &t, color_t &col, float &ipdf) const;
 	virtual int nSamples() const { return samples; }
 	static light_t *factory(paraMap_t &params, renderEnvironment_t &render);
   protected:
@@ -49,12 +49,10 @@ class sunLight_t : public light_t
 	float ePdf;
 };
 
-sunLight_t::sunLight_t(vector3d_t dir, const color_t &col, float inte, float angle, int nSamples, bool bLightEnabled, bool bCastShadows):
+sunLight_t::sunLight_t(vector3d_t dir, const color_t &col, CFLOAT inte, float angle, int nSamples):
 	direction(dir), samples(nSamples)
 {
-	lLightEnabled = bLightEnabled;
-    lCastShadows = bCastShadows;
-    color = col * inte;
+	color = col * inte;
 	direction.normalize();
 	createCS(dir, du, dv);
 	if(angle > 80.f) angle = 80.f;
@@ -75,8 +73,6 @@ void sunLight_t::init(scene_t &scene)
 
 bool sunLight_t::illumSample(const surfacePoint_t &sp, lSample_t &s, ray_t &wi) const
 {
-	if( photonOnly() ) return false;
-	
 	//sample direction uniformly inside cone:
 	wi.dir = sampleCone(direction, du, dv, cosAngle, s.s1, s.s2);
 	wi.tmax = -1.f;
@@ -88,9 +84,9 @@ bool sunLight_t::illumSample(const surfacePoint_t &sp, lSample_t &s, ray_t &wi) 
 	return true;
 }
 
-bool sunLight_t::intersect(const ray_t &ray, float &t, color_t &col, float &ipdf) const
+bool sunLight_t::intersect(const ray_t &ray, PFLOAT &t, color_t &col, float &ipdf) const
 {
-	float cosine = ray.dir*direction;
+	PFLOAT cosine = ray.dir*direction;
 	if(cosine < cosAngle) return false;
 	col = colPdf;
 	t = -1;
@@ -120,33 +116,17 @@ light_t *sunLight_t::factory(paraMap_t &params,renderEnvironment_t &render)
 {
 	point3d_t dir(0.0, 0.0, 1.0);
 	color_t color(1.0);
-	float power = 1.0;
+	CFLOAT power = 1.0;
 	float angle = 0.27; //angular (half-)size of the real sun;
 	int samples = 4;
-	bool lightEnabled = true;
-	bool castShadows = true;
-	bool shootD = true;
-	bool shootC = true;
-	bool pOnly = false;
 
 	params.getParam("direction",dir);
 	params.getParam("color",color);
 	params.getParam("power",power);
 	params.getParam("angle",angle);
 	params.getParam("samples",samples);
-	params.getParam("light_enabled", lightEnabled);
-	params.getParam("cast_shadows", castShadows);
-	params.getParam("with_caustic", shootC);
-	params.getParam("with_diffuse", shootD);
-	params.getParam("photon_only",pOnly);
 
-	sunLight_t *light = new sunLight_t(vector3d_t(dir.x, dir.y, dir.z), color, power, angle, samples, lightEnabled, castShadows);
-	
-	light->lShootCaustic = shootC;
-	light->lShootDiffuse = shootD;
-	light->lPhotonOnly = pOnly;
-
-	return light;
+	return new sunLight_t(vector3d_t(dir.x, dir.y, dir.z), color, power, angle, samples);
 }
 
 extern "C"

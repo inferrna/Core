@@ -29,25 +29,19 @@
 
 __BEGIN_YAFRAY
 
-meshLight_t::meshLight_t(unsigned int msh, const color_t &col, int sampl, bool dbl_s, bool bLightEnabled, bool bCastShadows):
-	objID(msh), doubleSided(dbl_s), color(col), samples(sampl), tree(nullptr)
+meshLight_t::meshLight_t(unsigned int msh, const color_t &col, int sampl, bool dbl_s):
+	objID(msh), doubleSided(dbl_s), color(col), samples(sampl), tree(0)
 {
-	lLightEnabled = bLightEnabled;
-    lCastShadows = bCastShadows;
-    mesh = nullptr;
-    areaDist = nullptr;
-    tris = nullptr;
+	mesh = 0;
 	//initIS();
 }
 
 meshLight_t::~meshLight_t()
 {
-	if(areaDist) delete areaDist;
-	areaDist = nullptr;
-	if(tris) delete[] tris;
-	tris = nullptr;
+	delete areaDist;
+	areaDist = 0;
+	delete[] tris;
 	if(tree) delete tree;
-	tree = nullptr;
 }
 
 void meshLight_t::initIS()
@@ -79,7 +73,7 @@ void meshLight_t::init(scene_t &scene)
 		// tell the mesh that a meshlight is associated with it (not sure if this is the best place though):
 		mesh->setLight(this);
 
-		Y_VERBOSE << "MeshLight: triangles:" << nTris << ", double sided:" << doubleSided << ", area:" << area << " color:" << color << yendl;
+		Y_INFO << "MeshLight: triangles:" << nTris << ", double sided:" << doubleSided << ", area:" << area << " color:" << color << yendl;
 	}
 }
 
@@ -89,7 +83,7 @@ void meshLight_t::sampleSurface(point3d_t &p, vector3d_t &n, float s1, float s2)
 	int primNum = areaDist->DSample(s1, &primPdf);
 	if(primNum >= areaDist->count)
 	{
-		Y_WARNING << "MeshLight: Sampling error!" << yendl;
+		Y_INFO << "MeshLight: Sampling error!" << yendl;
 		return;
 	}
 	float ss1, delta = areaDist->cdf[primNum+1];
@@ -107,19 +101,17 @@ color_t meshLight_t::totalEnergy() const { return (doubleSided ? 2.f*color*area 
 
 bool meshLight_t::illumSample(const surfacePoint_t &sp, lSample_t &s, ray_t &wi) const
 {
-	if( photonOnly() ) return false;
-	
 	vector3d_t n;
 	point3d_t p;
 	sampleSurface(p, n, s.s1, s.s2);
 	
 	vector3d_t ldir = p - sp.P;
 	//normalize vec and compute inverse square distance
-	float dist_sqr = ldir.lengthSqr();
-	float dist = fSqrt(dist_sqr);
+	PFLOAT dist_sqr = ldir.lengthSqr();
+	PFLOAT dist = fSqrt(dist_sqr);
 	if(dist <= 0.0) return false;
 	ldir *= 1.f/dist;
-	float cos_angle = -(ldir*n);
+	PFLOAT cos_angle = -(ldir*n);
 	//no light if point is behind area light (single sided!)
 	if(cos_angle <= 0)
 	{
@@ -185,25 +177,25 @@ color_t meshLight_t::emitSample(vector3d_t &wo, lSample_t &s) const
 	return color;
 }
 
-bool meshLight_t::intersect(const ray_t &ray, float &t, color_t &col, float &ipdf) const
+bool meshLight_t::intersect(const ray_t &ray, PFLOAT &t, color_t &col, float &ipdf) const
 {
 	if(!tree) return false;
-	float dis;
+	PFLOAT dis;
 	intersectData_t bary;
 	triangle_t *hitt=0;
-	if(ray.tmax<0) dis=std::numeric_limits<float>::infinity();
+	if(ray.tmax<0) dis=std::numeric_limits<PFLOAT>::infinity();
 	else dis=ray.tmax;
 	// intersect with tree:
 	if( ! tree->Intersect(ray, dis, &hitt, t, bary) ){ return false; }
 	
 	vector3d_t n = hitt->getNormal();
-	float cos_angle = ray.dir*(-n);
+	PFLOAT cos_angle = ray.dir*(-n);
 	if(cos_angle <= 0)
 	{
 		if(doubleSided) cos_angle = std::fabs(cos_angle);
 		else return false;
 	}
-	float idist_sqr = 1.f / (t*t);
+	PFLOAT idist_sqr = 1.f / (t*t);
 	ipdf = idist_sqr * area * cos_angle * (1.f/M_PI);
 	col = color;
 	
@@ -213,7 +205,7 @@ bool meshLight_t::intersect(const ray_t &ray, float &t, color_t &col, float &ipd
 float meshLight_t::illumPdf(const surfacePoint_t &sp, const surfacePoint_t &sp_light) const
 {
 	vector3d_t wo = sp.P - sp_light.P;
-	float r2 = wo.normLenSqr();
+	PFLOAT r2 = wo.normLenSqr();
 	float cos_n = wo * sp_light.Ng;
 	return cos_n > 0 ? r2 * M_PI / (area * cos_n) : (doubleSided ? r2 * M_PI / (area * -cos_n)  : 0.f);
 }
@@ -233,29 +225,13 @@ light_t* meshLight_t::factory(paraMap_t &params,renderEnvironment_t &render)
 	double power = 1.0;
 	int samples = 4;
 	int object = 0;
-	bool lightEnabled = true;
-	bool castShadows = true;
-	bool shootD = true;
-	bool shootC = true;
-	bool pOnly = false;
 
 	params.getParam("object", object);
 	params.getParam("color", color);
 	params.getParam("power", power);
 	params.getParam("samples", samples);
 	params.getParam("double_sided", doubleS);
-	params.getParam("light_enabled", lightEnabled);
-	params.getParam("cast_shadows", castShadows);
-	params.getParam("with_caustic", shootC);
-	params.getParam("with_diffuse", shootD);
-	params.getParam("photon_only",pOnly);
 
-	meshLight_t *light = new meshLight_t(object, color*(float)power*M_PI, samples, doubleS, lightEnabled, castShadows);
-	
-	light->lShootCaustic = shootC;
-	light->lShootDiffuse = shootD;
-	light->lPhotonOnly = pOnly;
-	
-	return light;
+	return new meshLight_t(object, color*(CFLOAT)power*M_PI, samples, doubleS);
 }
 __END_YAFRAY

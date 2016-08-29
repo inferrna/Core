@@ -62,13 +62,14 @@ void hashGrid_t::updateGrid()
 			{
 				//delete hashGrid[i];
 				hashGrid[i]->clear(); // fix me! too many time consumed here
-				//hashGrid[i] = nullptr;
+				//hashGrid[i] = NULL;
 			}
 		}
 	}
 
 	//travel the vector to build the Grid
-	for(auto itr = photons.begin(); itr != photons.end(); ++itr)
+	std::vector<photon_t>::iterator itr;
+	for(itr = photons.begin(); itr != photons.end(); ++itr)
 	{
 		point3d_t hashindex  =  ( (*itr).pos - bBox.a) * invcellSize;
 
@@ -78,7 +79,7 @@ void hashGrid_t::updateGrid()
 
 		unsigned int index = Hash(ix,iy,iz);
 
-		if(hashGrid[index] == nullptr)
+		if(hashGrid[index] == NULL)
 			hashGrid[index] = new std::list<photon_t*>();
 
 		hashGrid[index]->push_front(&(*itr));
@@ -88,13 +89,13 @@ void hashGrid_t::updateGrid()
 	{
 		if(!hashGrid[i] || hashGrid[i]->size() == 0) notused++;
 	}
-	Y_VERBOSE<<"HashGrid: there are " << notused << " enties not used!"<<std::endl;
+	Y_INFO<<"HashGrid: there are " << notused << " enties not used!"<<std::endl;
 }
 
-unsigned int hashGrid_t::gather(const point3d_t &P, foundPhoton_t *found, unsigned int K, float sqRadius)
+unsigned int hashGrid_t::gather(const point3d_t &P, foundPhoton_t *found, unsigned int K, PFLOAT sqRadius)
 {
 	unsigned int count = 0;
-	float radius = sqrt(sqRadius);
+	PFLOAT radius = sqrt(sqRadius);
 
 	point3d_t rad(radius, radius, radius);
 	point3d_t bMin = ((P - rad) - bBox.a) * invcellSize;
@@ -105,9 +106,10 @@ unsigned int hashGrid_t::gather(const point3d_t &P, foundPhoton_t *found, unsign
 			for (int ix = abs(int(bMin.x)); ix <= abs(int(bMax.x)); ix++) {
 				int hv = Hash(ix, iy, iz);
 
-				if(hashGrid[hv] == nullptr) continue;
+				if(hashGrid[hv] == NULL) continue;
 
-				for(auto itr = hashGrid[hv]->begin(); itr != hashGrid[hv]->end(); ++itr)
+				std::list<photon_t*>::iterator itr;
+				for(itr = hashGrid[hv]->begin(); itr != hashGrid[hv]->end(); ++itr)
 				{
 					if( ( (*itr)->pos- P).lengthSqr() < sqRadius)
 					{

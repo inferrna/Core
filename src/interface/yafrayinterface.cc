@@ -5,63 +5,11 @@
 #include <core_api/imagefilm.h>
 #include <core_api/integrator.h>
 #include <core_api/matrix4.h>
-#include <signal.h>
-
-#ifdef WIN32
-	#include <windows.h>
-#endif
 
 __BEGIN_YAFRAY
 
-scene_t *globalScene = nullptr;
-
-#ifdef WIN32
-BOOL WINAPI ctrl_c_handler(DWORD signal) {
-	if(globalScene)
-	{
-		globalScene->abort(); 
-		session.setStatusRenderAborted();
-		Y_WARNING << "Interface: Render aborted by user." << yendl;
-	}
-	else
-	{
-		session.setStatusRenderAborted();
-		Y_WARNING << "Interface: Render aborted by user." << yendl;
-		exit(1);
-	}
-    return TRUE;
-}
-#else
-void ctrl_c_handler(int signal)
+yafrayInterface_t::yafrayInterface_t(): scene(0), film(0), inputGamma(1.f), gcInput(false)
 {
-	if(globalScene)
-	{
-		globalScene->abort(); 
-		session.setStatusRenderAborted();
-		Y_WARNING << "Interface: Render aborted by user." << yendl;
-	}
-	else
-	{
-		session.setStatusRenderAborted();
-		Y_WARNING << "Interface: Render aborted by user." << yendl;
-		exit(1);
-	}	
-}
-#endif
-
-yafrayInterface_t::yafrayInterface_t(): scene(nullptr), film(nullptr), inputGamma(1.f), inputColorSpace(RAW_MANUAL_GAMMA)
-{
-	//handle CTRL+C events
-#ifdef WIN32
-	SetConsoleCtrlHandler(ctrl_c_handler, true);
-#else
-	struct sigaction signalHandler;
-	signalHandler.sa_handler = ctrl_c_handler;
-	sigemptyset(&signalHandler.sa_mask);
-	signalHandler.sa_flags = 0;
-	sigaction(SIGINT, &signalHandler, nullptr);
-#endif
-
 	env = new renderEnvironment_t();
 	params = new paraMap_t;
 	eparams = new std::list<paraMap_t>;
@@ -70,20 +18,19 @@ yafrayInterface_t::yafrayInterface_t(): scene(nullptr), film(nullptr), inputGamm
 
 yafrayInterface_t::~yafrayInterface_t()
 {
-	Y_VERBOSE << "Interface: Deleting scene..." << yendl;
+	Y_INFO << "Interface: Deleting scene..." << yendl;
 	if(scene) delete scene;
-	Y_VERBOSE << "Interface: Deleting environment..." << yendl;
+	Y_INFO << "Interface: Deleting environment..." << yendl;
 	if(env) delete env;
 	Y_INFO << "Interface: Done." << yendl;
 	if(film) delete film;
 	delete params;
 	delete eparams;
-	yafLog.clearAll();
 }
 
 void yafrayInterface_t::loadPlugins(const char *path)
 {
-	if(path != nullptr)
+	if(path != 0)
 	{
 		std::string plugPath(path);
 		if(plugPath.empty()) env->getPluginPath(plugPath);
@@ -102,45 +49,26 @@ void yafrayInterface_t::loadPlugins(const char *path)
 
 void yafrayInterface_t::clearAll()
 {
-	Y_VERBOSE << "Interface: Cleaning environment..." << yendl;
+	Y_INFO << "Interface: Cleaning environment..." << yendl;
 	env->clearAll();
-	Y_VERBOSE << "Interface: Deleting scene..." << yendl;
+	Y_INFO << "Interface: Deleteing scene..." << yendl;
 	if(scene) delete scene;
-	Y_VERBOSE << "Interface: Clearing film and parameter maps scene..." << yendl;
-	scene = nullptr;//new scene_t();
+	Y_INFO << "Interface: Clearing film and parameter maps scene..." << yendl;
+	scene = 0;//new scene_t();
 	if(film) delete film;
-	film = nullptr;
+	film = 0;
 	params->clear();
 	eparams->clear();
 	cparams = params;
-	Y_VERBOSE << "Interface: Cleanup done." << yendl;
+	Y_INFO << "Interface: Cleanup done." << yendl;
 }
 
 bool yafrayInterface_t::startScene(int type)
 {
 	if(scene) delete scene;
-	scene = new scene_t(env);
-	globalScene = scene;	//for the CTRL+C handler
+	scene = new scene_t();
 	scene->setMode(type);
 	env->setScene(scene);
-	return true;
-}
-
-bool yafrayInterface_t::setLoggingAndBadgeSettings()
-{
-	env->setupLoggingAndBadge(*params);
-	return true;
-}
-
-bool yafrayInterface_t::setupRenderPasses()
-{
-	env->setupRenderPasses(*params);
-	return true;
-}
-
-bool yafrayInterface_t::setInteractive(bool interactive)
-{
-	session.setInteractive(interactive);
 	return true;
 }
 
@@ -154,27 +82,27 @@ unsigned int yafrayInterface_t::getNextFreeID() {
 	return id;
 }
 
-bool yafrayInterface_t::startTriMesh(unsigned int id, int vertices, int triangles, bool hasOrco, bool hasUV, int type, int obj_pass_index)
+bool yafrayInterface_t::startTriMesh(unsigned int id, int vertices, int triangles, bool hasOrco, bool hasUV, int type)
 {
-	bool success = scene->startTriMesh(id, vertices, triangles, hasOrco, hasUV, type, obj_pass_index);
+	bool success = scene->startTriMesh(id, vertices, triangles, hasOrco, hasUV, type);
 	return success;
 }
 
-bool yafrayInterface_t::startCurveMesh(unsigned int id, int vertices, int obj_pass_index)
+bool yafrayInterface_t::startCurveMesh(unsigned int id, int vertices)
 {
-        bool success = scene->startCurveMesh(id, vertices, obj_pass_index);
+        bool success = scene->startCurveMesh(id, vertices);
         return success;
 }
 
 
-bool yafrayInterface_t::startTriMeshPtr(unsigned int *id, int vertices, int triangles, bool hasOrco, bool hasUV, int type, int obj_pass_index)
+bool yafrayInterface_t::startTriMeshPtr(unsigned int *id, int vertices, int triangles, bool hasOrco, bool hasUV, int type)
 {
 	Y_WARNING << "Interface: This method is going to be removed, please use getNextFreeID() and startTriMesh() for trimesh generation" << yendl;
 	objID_t _id;
 	_id = scene->getNextFreeID();
 	if ( _id > 0 )
 	{
-		bool success = scene->startTriMesh(_id, vertices, triangles, hasOrco, hasUV, type, obj_pass_index);
+		bool success = scene->startTriMesh(_id, vertices, triangles, hasOrco, hasUV, type);
 		*id = _id;
 		return success;
 	}
@@ -243,14 +171,14 @@ void yafrayInterface_t::paramsSetFloat(const char* name, double f)
 void yafrayInterface_t::paramsSetColor(const char* name, float r, float g, float b, float a)
 {
 	colorA_t col(r,g,b,a);
-	col.linearRGB_from_ColorSpace(inputColorSpace, inputGamma);
+	if(gcInput) col.gammaAdjust(inputGamma);
 	(*cparams)[std::string(name)] = parameter_t(col);
 }
 
 void yafrayInterface_t::paramsSetColor(const char* name, float *rgb, bool with_alpha)
 {
 	colorA_t col(rgb[0],rgb[1],rgb[2], (with_alpha ? rgb[3] : 1.f));
-	col.linearRGB_from_ColorSpace(inputColorSpace, inputGamma);
+	if(gcInput) col.gammaAdjust(inputGamma);
 	(*cparams)[std::string(name)] = parameter_t(col);
 }
 
@@ -286,15 +214,10 @@ void yafrayInterface_t::paramsSetMemMatrix(const char* name, double* matrix, boo
 	paramsSetMatrix(name, mat, transpose);
 }
 
-void yafrayInterface_t::setInputColorSpace(std::string color_space_string, float gammaVal)
+void yafrayInterface_t::setInputGamma(float gammaVal, bool enable)
 {
-	if(color_space_string == "sRGB") inputColorSpace = SRGB;
-	else if(color_space_string == "XYZ") inputColorSpace = XYZ_D65;
-	else if(color_space_string == "LinearRGB") inputColorSpace = LINEAR_RGB;
-	else if(color_space_string == "Raw_Manual_Gamma") inputColorSpace = RAW_MANUAL_GAMMA;
-	else inputColorSpace = SRGB;
-	
-	inputGamma = gammaVal;
+	gcInput = enable;
+	if(gammaVal > 0) inputGamma = gammaVal;
 }
 
 void yafrayInterface_t::paramsClearAll()
@@ -330,11 +253,7 @@ light_t* yafrayInterface_t::createLight(const char* name)
 
 texture_t* 		yafrayInterface_t::createTexture(const char* name) { return env->createTexture(name, *params); }
 material_t* 	yafrayInterface_t::createMaterial(const char* name) { return env->createMaterial(name, *params, *eparams); }
-camera_t* 		yafrayInterface_t::createCamera(const char* name)
-{
-	camera_t *camera = env->createCamera(name, *params);
-	return camera;
-}
+camera_t* 		yafrayInterface_t::createCamera(const char* name) { return env->createCamera(name, *params); }
 background_t* 	yafrayInterface_t::createBackground(const char* name) { return env->createBackground(name, *params); }
 integrator_t* 	yafrayInterface_t::createIntegrator(const char* name) { return env->createIntegrator(name, *params); }
 imageHandler_t* yafrayInterface_t::createImageHandler(const char* name, bool addToTable) { return env->createImageHandler(name, *params, addToTable); }
@@ -342,12 +261,12 @@ imageHandler_t* yafrayInterface_t::createImageHandler(const char* name, bool add
 VolumeRegion* 	yafrayInterface_t::createVolumeRegion(const char* name)
 {
 	VolumeRegion* vr = env->createVolumeRegion(name, *params);
-	if (!vr) return nullptr;
+	if (!vr) return 0;
 	scene->addVolumeRegion(vr);
-	return nullptr;
+	return 0;
 }
 
-unsigned int yafrayInterface_t::createObject(const char* name)
+unsigned int yafrayInterface_t::createObject	(const char* name)
 {
 	object3d_t *object = env->createObject(name, *params);
 	if(!object) return 0;
@@ -356,17 +275,12 @@ unsigned int yafrayInterface_t::createObject(const char* name)
 	return 0;
 }
 
-void yafrayInterface_t::abort()
-{
-	if(scene) scene->abort(); 
-	session.setStatusRenderAborted();
-	Y_WARNING << "Interface: Render aborted by user." << yendl;
-}
+void yafrayInterface_t::abort(){ if(scene) scene->abort(); }
 
-bool yafrayInterface_t::getRenderedImage(int numView, colorOutput_t &output)
+bool yafrayInterface_t::getRenderedImage(colorOutput_t &output)
 {
 	if(!film) return false;
-	film->flush(numView, IF_ALL, &output);
+	film->flush(IF_ALL, &output);
 	return true;
 }
 
@@ -392,27 +306,16 @@ std::string yafrayInterface_t::getImageFullNameFromFormat(const std::string &for
 
 char* yafrayInterface_t::getVersion() const
 {
-	return (char*)session.getYafaRayCoreVersion().c_str();
-}
-
-void yafrayInterface_t::printDebug(const std::string &msg)
-{
-	Y_DEBUG << msg << yendl;
-}
-
-void yafrayInterface_t::printVerbose(const std::string &msg)
-{
-	Y_VERBOSE << msg << yendl;
+#ifdef RELEASE
+	return (char*)std::string(VERSION).c_str();
+#else
+	return (char*)std::string(YAF_SVN_REV).c_str();
+#endif
 }
 
 void yafrayInterface_t::printInfo(const std::string &msg)
 {
 	Y_INFO << msg << yendl;
-}
-
-void yafrayInterface_t::printParams(const std::string &msg)
-{
-	Y_PARAMS << msg << yendl;
 }
 
 void yafrayInterface_t::printWarning(const std::string &msg)
@@ -425,42 +328,57 @@ void yafrayInterface_t::printError(const std::string &msg)
 	Y_ERROR << msg << yendl;
 }
 
+void yafrayInterface_t::printLog(const std::string &msg)
+{
+	Y_LOG << msg << yendl;
+}
+
 void yafrayInterface_t::render(colorOutput_t &output, progressBar_t *pb)
 {
 	if(! env->setupScene(*scene, *params, output, pb) ) return;
-	session.setStatusRenderStarted();
 	scene->render();
 	film = scene->getImageFilm();
 	//delete film;
 }
 
-void yafrayInterface_t::setParamsBadgePosition(const std::string &badgePosition)
+void yafrayInterface_t::setDrawParams(bool on)
 {
-	yafLog.setParamsBadgePosition(badgePosition);
+	(*params)["drawParams"] = on;
+	if(film) film->setUseParamsBadge(on);
 }
 
 bool yafrayInterface_t::getDrawParams()
 {
 	bool dp = false;
 	
-	dp = yafLog.getUseParamsBadge();
+	if(film) dp = film->getUseParamsBadge();
+	else params->getParam("drawParams", dp);
 	
 	return dp;
 }
-
-void yafrayInterface_t::setOutput2(colorOutput_t *out2)
+void yafrayInterface_t::setVerbosityLevel(int vlevel)
 {
-	if(env) env->setOutput2(out2);
+	yafout.setMasterVerbosity(vlevel);
 }
 
-void yafrayInterface_t::setConsoleVerbosityLevel(const std::string &strVLevel)
+void yafrayInterface_t::setVerbosityInfo()
 {
-	yafLog.setConsoleMasterVerbosity(strVLevel);
+	yafout.setMasterVerbosity(VL_INFO);
 }
 
-void yafrayInterface_t::setLogVerbosityLevel(const std::string &strVLevel)
+void yafrayInterface_t::setVerbosityWarning()
 {
-	yafLog.setLogMasterVerbosity(strVLevel);
+	yafout.setMasterVerbosity(VL_WARNING);
+}
+
+void yafrayInterface_t::setVerbosityError()
+{
+	yafout.setMasterVerbosity(VL_ERROR);
+}
+
+void yafrayInterface_t::setVerbosityMute()
+{
+	yafout.setMasterVerbosity(VL_MUTE);
 }
 
 // export "factory"...

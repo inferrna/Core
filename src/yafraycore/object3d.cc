@@ -20,10 +20,6 @@
 
 __BEGIN_YAFRAY
 
-float object3d_t::highestObjectIndex = 1.f;	//Initially this class shared variable will be 1.f
-unsigned int object3d_t::objectIndexAuto = 0;	//Initially this class shared variable will be 0
-
-
 triangleObject_t::triangleObject_t(int ntris, bool hasUV, bool hasOrco):
     has_orco(hasOrco), has_uv(hasUV), is_smooth(false), normals_exported(false)
 {
@@ -61,7 +57,7 @@ triangle_t* triangleObject_t::addTriangle(const triangle_t &t)
 
 void triangleObject_t::finish()
 {
-	for(auto i=triangles.begin(); i!= triangles.end(); ++i)
+	for(std::vector<triangle_t>::iterator i=triangles.begin(); i!= triangles.end(); ++i)
 	{
 		i->recNormal();
 	}
@@ -107,7 +103,7 @@ void triangleObjectInstance_t::finish()
 =====================================*/
 
 meshObject_t::meshObject_t(int ntris, bool hasUV, bool hasOrco):
-	has_orco(hasOrco), has_uv(hasUV), has_vcol(false), is_smooth(false), light(nullptr)
+	has_orco(hasOrco), has_uv(hasUV), has_vcol(false), is_smooth(false), light(0)
 {
 	//triangles.reserve(ntris);
 	if(hasUV)
@@ -144,7 +140,7 @@ primitive_t* meshObject_t::addBsTriangle(const bsTriangle_t &t)
 
 void meshObject_t::finish()
 {
-	for(auto i=triangles.begin(); i!= triangles.end(); ++i)
+	for(std::vector<vTriangle_t>::iterator i=triangles.begin(); i!= triangles.end(); ++i)
 	{
 		i->recNormal();
 	}

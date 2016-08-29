@@ -41,8 +41,8 @@ protected:
     color_t gzenith,  ghoriz, szenith, shoriz;
 };
 
-gradientBackground_t::gradientBackground_t(color_t gzcol, color_t ghcol, color_t szcol, color_t shcol, bool ibl, bool with_caustic):
-gzenith(gzcol), ghoriz(ghcol), szenith(szcol), shoriz(shcol), withIBL(ibl), shootCaustic(with_caustic)
+gradientBackground_t::gradientBackground_t(color_t gzcol, color_t ghcol, color_t szcol, color_t shcol):
+gzenith(gzcol), ghoriz(ghcol), szenith(szcol), shoriz(shcol)
 {
     // Empty
 }
@@ -52,12 +52,12 @@ gradientBackground_t::~gradientBackground_t()
     // Empty
 }
 
-color_t gradientBackground_t::operator() (const ray_t &ray, renderState_t &state, bool from_postprocessed) const
+color_t gradientBackground_t::operator() (const ray_t &ray, renderState_t &state, bool filtered) const
 {
     return eval(ray);
 }
 
-color_t gradientBackground_t::eval(const ray_t &ray, bool from_postprocessed) const
+color_t gradientBackground_t::eval(const ray_t &ray, bool filtered) const
 {
     color_t color;
 

@@ -30,18 +30,18 @@ bound_t sphere_t::getBound() const
 	return bound_t(center - r, center + r);
 }
 
-bool sphere_t::intersect(const ray_t &ray, float *t, intersectData_t &data) const
+bool sphere_t::intersect(const ray_t &ray, PFLOAT *t, intersectData_t &data) const
 {
 	vector3d_t vf = ray.from - center;
-	float ea = ray.dir*ray.dir;
-	float eb = 2.0*(vf*ray.dir);
-	float ec = vf*vf - radius*radius;
-	float osc = eb*eb-4.0*ea*ec;
+	PFLOAT ea = ray.dir*ray.dir;
+	PFLOAT eb = 2.0*(vf*ray.dir);
+	PFLOAT ec = vf*vf - radius*radius;
+	PFLOAT osc = eb*eb-4.0*ea*ec;
 	if(osc<0) return false;
 	osc=fSqrt(osc);
-	float sol1=(-eb-osc)/(2.0*ea);
-	float sol2=(-eb+osc)/(2.0*ea);
-	float sol=sol1;
+	PFLOAT sol1=(-eb-osc)/(2.0*ea);
+	PFLOAT sol2=(-eb+osc)/(2.0*ea);
+	PFLOAT sol=sol1;
 	if(sol < ray.tmin)
 	{
 		sol = sol2;
@@ -66,7 +66,7 @@ void sphere_t::getSurface(surfacePoint_t &sp, const point3d_t &hit, intersectDat
 	createCS(sp.N, sp.NU, sp.NV);
 	sp.U = atan2(normal.y, normal.x)*M_1_PI + 1;
 	sp.V = 1.f - fAcos(normal.z)*M_1_PI;
-	sp.light = nullptr;
+	sp.light = 0;
 }
 
 object3d_t* sphere_factory(paraMap_t &params, renderEnvironment_t &env)
@@ -78,9 +78,9 @@ object3d_t* sphere_factory(paraMap_t &params, renderEnvironment_t &env)
 	params.getParam("center", center);
 	params.getParam("radius", radius);
 	params.getParam("material", matname);
-	if(!matname) return nullptr;
+	if(!matname) return 0;
 	mat = env.getMaterial(*matname);
-	if(!mat) return nullptr;
+	if(!mat) return 0;
 	sphere_t *sphere = new sphere_t(center, radius, mat);
 	return new primObject_t(sphere);
 }

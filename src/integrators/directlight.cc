@@ -25,9 +25,7 @@
 #include <core_api/mcintegrator.h>
 #include <core_api/background.h>
 #include <core_api/light.h>
-#include <yafraycore/timer.h>
 #include <sstream>
-#include <iomanip>
 
 __BEGIN_YAFRAY
 
@@ -111,7 +109,7 @@ bool directLighting_t::preprocess()
     return success;
 }
 
-colorA_t directLighting_t::integrate(renderState_t &state, diffRay_t &ray, colorPasses_t &colorPasses, int additionalDepth /*=0*/) const
+colorA_t directLighting_t::integrate(renderState_t &state, diffRay_t &ray) const
 {
     color_t col(0.0);
     CFLOAT alpha = 1.0;

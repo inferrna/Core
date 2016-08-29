@@ -26,11 +26,6 @@
 
 __BEGIN_YAFRAY
 
-
-float material_t::highestMaterialIndex = 1.f;	//Initially this class shared variable will be 1.f
-unsigned int material_t::materialIndexAuto = 0;	//Initially this class shared variable will be 0
-
-
 bool material_t::scatterPhoton(const renderState_t &state, const surfacePoint_t &sp, const vector3d_t &wi, vector3d_t &wo, pSample_t &s) const
 {
 	float W = 0.f;
@@ -38,8 +33,8 @@ bool material_t::scatterPhoton(const renderState_t &state, const surfacePoint_t 
 	if(s.pdf > 1.0e-6f)
 	{
 		color_t cnew = s.lcol * s.alpha * scol * W;
-		float new_max = cnew.maximum();
-		float old_max = s.lcol.maximum();
+		CFLOAT new_max = cnew.maximum();
+		CFLOAT old_max = s.lcol.maximum();
 		float prob = std::min(1.f, new_max/old_max);
 		if(s.s3 <= prob && prob > 1e-4f)
 		{
@@ -70,7 +65,7 @@ color_t material_t::getReflectivity(const renderState_t &state, const surfacePoi
 	return total * 0.0625; //total / 16.f
 }		
 
-void material_t::applyBump(surfacePoint_t &sp, float dfdNU, float dfdNV) const
+void material_t::applyBump(surfacePoint_t &sp, PFLOAT dfdNU, PFLOAT dfdNV) const
 {
 	sp.NU += dfdNU * sp.N;
 	sp.NV += dfdNV * sp.N;

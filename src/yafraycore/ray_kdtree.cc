@@ -7,7 +7,7 @@
 //#include <math.h>
 #include <limits>
 #include <set>
-#if (defined (__GNUC__) && !defined (__clang__))
+#if ( HAVE_PTHREAD && defined (__GNUC__) )
 #include <ext/mt_allocator.h>
 #endif
 #include <time.h>
@@ -170,20 +170,20 @@ template<class T>
 void kdTree_t<T>::pigeonMinCost(u_int32 nPrims, bound_t &nodeBound, u_int32 *primIdx, splitCost_t &split)
 {
 	bin_t bin[ KD_BINS+1 ];
-	float d[3];
+	PFLOAT d[3];
 	d[0] = nodeBound.longX();
 	d[1] = nodeBound.longY();
 	d[2] = nodeBound.longZ();
 	split.oldCost = float(nPrims);
-	split.bestCost = std::numeric_limits<float>::infinity();
+	split.bestCost = std::numeric_limits<PFLOAT>::infinity();
 	float invTotalSA = 1.0f / (d[0]*d[1] + d[0]*d[2] + d[1]*d[2]);
-	float t_low, t_up;
+	PFLOAT t_low, t_up;
 	int b_left, b_right;
 	
 	for(int axis=0;axis<3;axis++)
 	{
-		float s = KD_BINS/d[axis];
-		float min = nodeBound.a[axis];
+		PFLOAT s = KD_BINS/d[axis];
+		PFLOAT min = nodeBound.a[axis];
 		// pigeonhole sort:
 		for(unsigned int i=0; i<nPrims; ++i)
 		{
@@ -319,12 +319,12 @@ template<class T>
 void kdTree_t<T>::minimalCost(u_int32 nPrims, bound_t &nodeBound, u_int32 *primIdx,
 		const bound_t *pBounds, boundEdge *edges[3], splitCost_t &split)
 {
-	float d[3];
+	PFLOAT d[3];
 	d[0] = nodeBound.longX();
 	d[1] = nodeBound.longY();
 	d[2] = nodeBound.longZ();
 	split.oldCost = float(nPrims);
-	split.bestCost = std::numeric_limits<float>::infinity();
+	split.bestCost = std::numeric_limits<PFLOAT>::infinity();
 	float invTotalSA = 1.0f / (d[0]*d[1] + d[0]*d[2] + d[1]*d[2]);
 	int nEdge;
 	
@@ -375,7 +375,7 @@ void kdTree_t<T>::minimalCost(u_int32 nPrims, bound_t &nodeBound, u_int32 *primI
 		//todo: early-out criteria: if l1 > l2*nPrims (l2 > l1*nPrims) => minimum is lowest (highest) edge!
 		if(nPrims>5)
 		{
-			float edget = edges[axis][0].pos;
+			PFLOAT edget = edges[axis][0].pos;
 			float l1 = edget - nodeBound.a[axis];
 			float l2 = nodeBound.g[axis] - edget;
 			if(l1 > l2*float(nPrims) && l2 > 0.f)
@@ -412,7 +412,7 @@ void kdTree_t<T>::minimalCost(u_int32 nPrims, bound_t &nodeBound, u_int32 *primI
 		
 		for (int i = 0; i < nEdge; ++i) {
 			if (edges[axis][i].end == UPPER_B) --nAbove;
-			float edget = edges[axis][i].pos;
+			PFLOAT edget = edges[axis][i].pos;
 			if (edget > nodeBound.a[axis] &&
 				edget < nodeBound.g[axis]) {
 				// Compute cost for split at _i_th edge
@@ -552,7 +552,7 @@ int kdTree_t<T>::buildTree(u_int32 nPrims, bound_t &nodeBound, u_int32 *primNums
 	}
 	
 	//todo: check working memory for child recursive calls
-	u_int32 remainingMem, *morePrims = nullptr, *nRightPrims;
+	u_int32 remainingMem, *morePrims = 0, *nRightPrims;
 	u_int32 *oldRightPrims = rightPrims;
 	if(nPrims > rightMemSize || 2*TRI_CLIP_THRESH > rightMemSize ) // *possibly* not enough, get some more
 	{
@@ -568,7 +568,7 @@ int kdTree_t<T>::buildTree(u_int32 nPrims, bound_t &nodeBound, u_int32 *primNums
 	}
 	
 	// Classify primitives with respect to split
-	float splitPos;
+	PFLOAT splitPos;
 	int n0 = 0, n1 = 0;
 	if(nPrims > 128) // we did pigeonhole
 	{
@@ -697,12 +697,12 @@ int kdTree_t<T>::buildTree(u_int32 nPrims, bound_t &nodeBound, u_int32 *primNums
 	returns the closest hit within dist
 */
 template<class T>
-bool kdTree_t<T>::Intersect(const ray_t &ray, float dist, T **tr, float &Z, intersectData_t &data) const
+bool kdTree_t<T>::Intersect(const ray_t &ray, PFLOAT dist, T **tr, PFLOAT &Z, intersectData_t &data) const
 {
 	Z=dist;
 	
-	float a, b, t; // entry/exit/splitting plane signed distance
-	float t_hit;
+	PFLOAT a, b, t; // entry/exit/splitting plane signed distance
+	PFLOAT t_hit;
 	
 	if (!treeBound.cross(ray, a, b, dist))
 	{ return false; }
@@ -729,17 +729,17 @@ bool kdTree_t<T>::Intersect(const ray_t &ray, float dist, T **tr, float &Z, inte
 	int exPt = 1; // pointer to stack
 	stack[exPt].t = b;
 	stack[exPt].pb = ray.from + ray.dir * b;
-	stack[exPt].node = nullptr; // "nowhere", termination flag
+	stack[exPt].node = 0; // "nowhere", termination flag
 	
 	//loop, traverse kd-Tree until object intersection or ray leaves tree bound
-	while (currNode != nullptr)
+	while (currNode != NULL)
 	{
 		if (dist < stack[enPt].t) break;
 		// loop until leaf is found
 		while( !currNode->IsLeaf() )
 		{
 			int axis = currNode->SplitAxis();
-			float splitVal = currNode->SplitPos();
+			PFLOAT splitVal = currNode->SplitPos();
 			
 			if(stack[enPt].pb[axis] <= splitVal){
 				if(stack[exPt].pb[axis] <= splitVal)
@@ -839,10 +839,10 @@ bool kdTree_t<T>::Intersect(const ray_t &ray, float dist, T **tr, float &Z, inte
 }
 
 template<class T>
-bool kdTree_t<T>::IntersectS(const ray_t &ray, float dist, T **tr, float shadow_bias) const
+bool kdTree_t<T>::IntersectS(const ray_t &ray, PFLOAT dist, T **tr) const
 {
-	float a, b, t; // entry/exit/splitting plane signed distance
-	float t_hit;
+	PFLOAT a, b, t; // entry/exit/splitting plane signed distance
+	PFLOAT t_hit;
 	
 	if (!treeBound.cross(ray, a, b, dist))
 		return false;
@@ -867,17 +867,17 @@ bool kdTree_t<T>::IntersectS(const ray_t &ray, float dist, T **tr, float shadow_
 	int exPt = 1; // pointer to stack
 	stack[exPt].t = b;
 	stack[exPt].pb = ray.from + ray.dir * b;
-	stack[exPt].node = nullptr; // "nowhere", termination flag
+	stack[exPt].node = 0; // "nowhere", termination flag
 	
 	//loop, traverse kd-Tree until object intersection or ray leaves tree bound
-	while (currNode != nullptr)
+	while (currNode != NULL)
 	{
 		if (dist < stack[enPt].t /*a*/) break;
 		// loop until leaf is found
 		while( !currNode->IsLeaf() )
 		{
 			int axis = currNode->SplitAxis();
-			float splitVal = currNode->SplitPos();
+			PFLOAT splitVal = currNode->SplitPos();
 			
 			if(stack[enPt].pb[axis] <= splitVal){
 				if(stack[exPt].pb[axis] <= splitVal)
@@ -971,10 +971,10 @@ bool kdTree_t<T>::IntersectS(const ray_t &ray, float dist, T **tr, float shadow_
 =============================================================*/
 
 template<class T>
-bool kdTree_t<T>::IntersectTS(renderState_t &state, const ray_t &ray, int maxDepth, float dist, T **tr, color_t &filt, float shadow_bias) const
+bool kdTree_t<T>::IntersectTS(renderState_t &state, const ray_t &ray, int maxDepth, PFLOAT dist, T **tr, color_t &filt) const
 {
-	float a, b, t; // entry/exit/splitting plane signed distance
-	float t_hit;
+	PFLOAT a, b, t; // entry/exit/splitting plane signed distance
+	PFLOAT t_hit;
 	
 	if (!treeBound.cross(ray, a, b, dist))
 		return false;
@@ -983,7 +983,7 @@ bool kdTree_t<T>::IntersectTS(renderState_t &state, const ray_t &ray, int maxDep
 	vector3d_t invDir(1.f/ray.dir.x, 1.f/ray.dir.y, 1.f/ray.dir.z);
 
 	int depth=0;
-#if (defined (__GNUC__)  && !defined (__clang__))
+#if ( HAVE_PTHREAD && defined (__GNUC__) )
 	std::set<const T *, std::less<const T *>, __gnu_cxx::__mt_alloc<const T *> > filtered;
 #else
 	std::set<const T *> filtered;
@@ -1005,17 +1005,17 @@ bool kdTree_t<T>::IntersectTS(renderState_t &state, const ray_t &ray, int maxDep
 	int exPt = 1; // pointer to stack
 	stack[exPt].t = b;
 	stack[exPt].pb = ray.from + ray.dir * b;
-	stack[exPt].node = nullptr; // "nowhere", termination flag
+	stack[exPt].node = 0; // "nowhere", termination flag
 	
 	//loop, traverse kd-Tree until object intersection or ray leaves tree bound
-	while (currNode != nullptr)
+	while (currNode != NULL)
 	{
 		if (dist < stack[enPt].t /*a*/) break;
 		// loop until leaf is found
 		while( !currNode->IsLeaf() )
 		{
 			int axis = currNode->SplitAxis();
-			float splitVal = currNode->SplitPos();
+			PFLOAT splitVal = currNode->SplitPos();
 			
 			if(stack[enPt].pb[axis] <= splitVal){
 				if(stack[exPt].pb[axis] <= splitVal)

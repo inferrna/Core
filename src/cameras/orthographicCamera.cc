@@ -26,7 +26,7 @@
 __BEGIN_YAFRAY
 
 orthoCam_t::orthoCam_t(const point3d_t &pos, const point3d_t &look, const point3d_t &up,
-        int _resx, int _resy, float aspect, float _scale, float const near_clip_distance, float const far_clip_distance)
+        int _resx, int _resy, PFLOAT aspect, PFLOAT _scale, float const near_clip_distance, float const far_clip_distance)
         :camera_t(pos, look, up, _resx, _resy, aspect, near_clip_distance, far_clip_distance), scale(_scale)
 {
 	// Initialize camera specific plane coordinates
@@ -43,12 +43,12 @@ void orthoCam_t::setAxis(const vector3d_t &vx, const vector3d_t &vy, const vecto
 	vup = aspect_ratio * camY;
 	vto = camZ;
 	pos = position - 0.5 * scale* (vup + vright);
-	vup     *= scale/(float)resy;
-	vright  *= scale/(float)resx;
+	vup     *= scale/(PFLOAT)resy;
+	vright  *= scale/(PFLOAT)resx;
 }
 
 
-ray_t orthoCam_t::shootRay(float px, float py, float lu, float lv, float &wt) const
+ray_t orthoCam_t::shootRay(PFLOAT px, PFLOAT py, float lu, float lv, PFLOAT &wt) const
 {
 	ray_t ray;
 	wt = 1;	// for now always 1, except 0 for probe when outside sphere
@@ -67,7 +67,7 @@ point3d_t orthoCam_t::screenproject(const point3d_t &p) const
 	vector3d_t dir = p - pos;	
 	// Project p to pixel plane
 
-	float dz = camZ * dir;
+	PFLOAT dz = camZ * dir;
 	
 	vector3d_t proj = dir - dz * camZ;
 	
@@ -84,7 +84,6 @@ camera_t* orthoCam_t::factory(paraMap_t &params, renderEnvironment_t &render)
 	int resx=320, resy=200;
 	double aspect=1.0, scale=1.0;
     float nearClip = 0.0f, farClip = -1.0f;
-    std::string viewName = "";
 
 	params.getParam("from", from);
 	params.getParam("to", to);
@@ -95,11 +94,8 @@ camera_t* orthoCam_t::factory(paraMap_t &params, renderEnvironment_t &render)
 	params.getParam("aspect_ratio", aspect);
     params.getParam("nearClip", nearClip);
     params.getParam("farClip", farClip);
-    params.getParam("view_name", viewName);
 
     orthoCam_t* cam = new orthoCam_t(from, to, up, resx, resy, aspect, scale, nearClip, farClip);
-
-	cam->view_name = viewName;
 
     return cam;
 }

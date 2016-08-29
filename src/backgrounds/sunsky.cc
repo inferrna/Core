@@ -38,13 +38,11 @@ color_t ComputeAttenuatedSunlight(float theta, int turbidity);
 class sunskyBackground_t: public background_t
 {
 	public:
-		sunskyBackground_t(const point3d_t dir, float turb, float a_var, float b_var, float c_var, float d_var, float e_var, float pwr, bool ibl, bool with_caustic);
-		virtual color_t operator() (const ray_t &ray, renderState_t &state, bool from_postprocessed=false) const;
-		virtual color_t eval(const ray_t &ray, bool from_postprocessed=false) const;
+		sunskyBackground_t(const point3d_t dir, float turb, float a_var, float b_var, float c_var, float d_var, float e_var, float pwr);
+		virtual color_t operator() (const ray_t &ray, renderState_t &state, bool filtered=false) const;
+		virtual color_t eval(const ray_t &ray, bool filtered=false) const;
 		virtual ~sunskyBackground_t();
 		static background_t *factory(paraMap_t &,renderEnvironment_t &);
-		bool hasIBL() { return withIBL; }
-		bool shootsCaustic() { return shootCaustic; }
 	protected:
 		color_t getSkyCol(const ray_t &ray) const;
 		vector3d_t sunDir;
@@ -56,12 +54,9 @@ class sunskyBackground_t: public background_t
 		double AngleBetween(double thetav, double phiv) const;
 		double PerezFunction(const double *lam, double theta, double gamma, double lvz) const;
 		float power;
-		bool withIBL;
-		bool shootCaustic;
-		bool shootDiffuse;
 };
 
-sunskyBackground_t::sunskyBackground_t(const point3d_t dir, float turb, float a_var, float b_var, float c_var, float d_var, float e_var, float pwr, bool ibl, bool with_caustic): power(pwr), withIBL(ibl), shootCaustic(with_caustic)
+sunskyBackground_t::sunskyBackground_t(const point3d_t dir, float turb, float a_var, float b_var, float c_var, float d_var, float e_var, float pwr): power(pwr)
 {
 	sunDir.set(dir.x, dir.y, dir.z);
 	sunDir.normalize();
@@ -192,12 +187,12 @@ inline color_t sunskyBackground_t::getSkyCol(const ray_t &ray) const
 	return skycolor;
 }
 
-color_t sunskyBackground_t::operator() (const ray_t &ray, renderState_t &state, bool from_postprocessed) const
+color_t sunskyBackground_t::operator() (const ray_t &ray, renderState_t &state, bool filtered) const
 {
 	return power * getSkyCol(ray);
 }
 
-color_t sunskyBackground_t::eval(const ray_t &ray, bool from_postprocessed) const
+color_t sunskyBackground_t::eval(const ray_t &ray, bool filtered) const
 {
 	return power * getSkyCol(ray);
 }
@@ -213,10 +208,6 @@ background_t *sunskyBackground_t::factory(paraMap_t &params,renderEnvironment_t 
 	float pw = 1.0;	// sunlight power
 	float av, bv, cv, dv, ev;
 	av = bv = cv = dv = ev = 1.0;	// color variation parameters, default is normal
-	bool castShadows = true;
-	bool castShadowsSun = true;
-	bool caus = true;
-	bool diff = true;
 
 	params.getParam("from", dir);
 	params.getParam("turbidity", turb);
@@ -235,22 +226,14 @@ background_t *sunskyBackground_t::factory(paraMap_t &params,renderEnvironment_t 
 
 	params.getParam("background_light", bgl);
 	params.getParam("light_samples", bgl_samples);
-	params.getParam("cast_shadows", castShadows);
-	params.getParam("cast_shadows_sun", castShadowsSun);
-	
-	params.getParam("with_caustic", caus);
-	params.getParam("with_diffuse", diff);
 
-	background_t *new_sunsky = new sunskyBackground_t(dir, turb, av, bv, cv, dv, ev, power, bgl, true);
+	background_t *new_sunsky = new sunskyBackground_t(dir, turb, av, bv, cv, dv, ev, power);
 
 	if(bgl)
 	{
 		paraMap_t bgp;
 		bgp["type"] = std::string("bglight");
 		bgp["samples"] = bgl_samples;
-		bgp["cast_shadows"] = castShadows;
-		bgp["with_caustic"] = caus;
-		bgp["with_diffuse"] = diff;
 
 		light_t *bglight = render.createLight("sunsky_bgLight", bgp);
 
@@ -267,7 +250,7 @@ background_t *sunskyBackground_t::factory(paraMap_t &params,renderEnvironment_t 
 		float invpdf = (2.f * M_PI * (1.f - cosAngle));
 		suncol *= invpdf * power;
 
-		Y_VERBOSE << "Sunsky: sun color = " << suncol << yendl;
+		Y_INFO << "Sunsky: sun color = " << suncol << yendl;
 
 		paraMap_t p;
 		p["type"] = std::string("sunlight");
@@ -275,9 +258,6 @@ background_t *sunskyBackground_t::factory(paraMap_t &params,renderEnvironment_t 
 		p["color"] = suncol;
 		p["angle"] = parameter_t(angle);
 		p["power"] = parameter_t(pw);
-		p["cast_shadows"] = castShadowsSun;
-		p["with_caustic"] = caus;
-		p["with_diffuse"] = diff;
 
 		light_t *light = render.createLight("sunsky_SUN", p);
 

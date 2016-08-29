@@ -26,7 +26,7 @@
 __BEGIN_YAFRAY
 
 angularCam_t::angularCam_t(const point3d_t &pos, const point3d_t &look, const point3d_t &up,
-                           int _resx, int _resy, float asp, float angle, bool circ,
+                           int _resx, int _resy, PFLOAT asp, PFLOAT angle, bool circ,
                            float const near_clip_distance, float const far_clip_distance) :
     camera_t(pos, look, up, _resx, _resy, asp, near_clip_distance, far_clip_distance), hor_phi(angle*M_PI/180.f), circular(circ)
 {
@@ -47,20 +47,20 @@ void angularCam_t::setAxis(const vector3d_t &vx, const vector3d_t &vy, const vec
 	vto = camZ;
 }
 
-ray_t angularCam_t::shootRay(float px, float py, float lu, float lv, float &wt) const
+ray_t angularCam_t::shootRay(PFLOAT px, PFLOAT py, float lu, float lv, PFLOAT &wt) const
 {
 	ray_t ray;
 	wt = 1;	// for now always 1, or 0 when circular and outside angle
 	ray.from = position;
-	float u = 1.f - 2.f * (px/(float)resx);
-	float v = 2.f * (py/(float)resy) - 1.f;
+	PFLOAT u = 1.f - 2.f * (px/(PFLOAT)resx);
+	PFLOAT v = 2.f * (py/(PFLOAT)resy) - 1.f;
 	v *= aspect_ratio;
-	float radius = fSqrt(u*u + v*v);
+	PFLOAT radius = fSqrt(u*u + v*v);
 	if (circular && radius>max_r) { wt=0; return ray; }
-	float theta=0;
+	PFLOAT theta=0;
 	if (!((u==0) && (v==0))) theta = atan2(v,u);
-	float phi = radius * hor_phi;
-	//float sp = sin(phi);
+	PFLOAT phi = radius * hor_phi;
+	//PFLOAT sp = sin(phi);
 	ray.dir = fSin(phi)*(fCos(theta)*vright + fSin(theta)*vup ) + fCos(phi)*vto;
 
     ray.tmin = ray_plane_intersection(ray, near_plane);
@@ -75,8 +75,7 @@ camera_t* angularCam_t::factory(paraMap_t &params, renderEnvironment_t &render)
 	int resx=320, resy=200;
 	double aspect=1.0, angle=90, max_angle=90;
 	bool circular = true, mirrored = false;
-	float nearClip = 0.0f, farClip = -1.0f;
-	std::string viewName = "";
+    float nearClip = 0.0f, farClip = -1.0f;
 
 	params.getParam("from", from);
 	params.getParam("to", to);

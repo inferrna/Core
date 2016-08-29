@@ -5,7 +5,7 @@
 
 __BEGIN_YAFRAY
 
-xmlInterface_t::xmlInterface_t(): last_mat(nullptr), nextObj(0), XMLGamma(1.f), XMLColorSpace(RAW_MANUAL_GAMMA)
+xmlInterface_t::xmlInterface_t(): last_mat(0), nextObj(0)
 {
 	xmlName = "yafaray.xml";
 }
@@ -16,7 +16,7 @@ void xmlInterface_t::loadPlugins(const char *path) { }
 
 void xmlInterface_t::clearAll()
 {
-	Y_VERBOSE << "XMLInterface: cleaning up..." << yendl;
+	Y_INFO << "XMLInterface: cleaning up..." << yendl;
 	env->clearAll();
 	materials.clear();
 	if(xmlFile.is_open())
@@ -49,24 +49,6 @@ bool xmlInterface_t::startScene(int type)
 	return true;
 }
 
-bool xmlInterface_t::setLoggingAndBadgeSettings()
-{
-	xmlFile << "\n<logging_badge name=\"logging_badge\">\n";
-	writeParamMap(*params);
-	params->clear();
-	xmlFile << "</logging_badge>\n";
-	return true;
-}
-
-bool xmlInterface_t::setupRenderPasses()
-{
-	xmlFile << "\n<render_passes name=\"render_passes\">\n";
-	writeParamMap(*params);
-	params->clear();
-	xmlFile << "</render_passes>\n";
-	return true;
-}
-
 void xmlInterface_t::setOutfile(const char *fname)
 {
 	xmlName = std::string(fname);
@@ -81,28 +63,28 @@ unsigned int xmlInterface_t::getNextFreeID() {
 }
 
 
-bool xmlInterface_t::startTriMesh(unsigned int id, int vertices, int triangles, bool hasOrco, bool hasUV, int type, int obj_pass_index)
+bool xmlInterface_t::startTriMesh(unsigned int id, int vertices, int triangles, bool hasOrco, bool hasUV, int type)
 {
-	last_mat = nullptr;
+	last_mat = 0;
 	n_uvs = 0;
 	xmlFile << "\n<mesh id=\"" << id << "\" vertices=\"" << vertices << "\" faces=\"" << triangles
-			<< "\" has_orco=\"" << hasOrco << "\" has_uv=\"" << hasUV << "\" type=\"" << type << "\" obj_pass_index=\"" << obj_pass_index << "\">\n";
+			<< "\" has_orco=\"" << hasOrco << "\" has_uv=\"" << hasUV << "\" type=\"" << type <<"\">\n";
 	return true;
 }
 
-bool xmlInterface_t::startCurveMesh(unsigned int id, int vertices, int obj_pass_index)
+bool xmlInterface_t::startCurveMesh(unsigned int id, int vertices)
 {
-	xmlFile << "\n<curve id=\"" << id << "\" vertices=\"" << vertices << "\" obj_pass_index=\"" << obj_pass_index << "\">\n";
+	xmlFile << "\n<curve id=\"" << id << "\" vertices=\"" << vertices <<"\">\n";
 	return true;
 }
 
-bool xmlInterface_t::startTriMeshPtr(unsigned int *id, int vertices, int triangles, bool hasOrco, bool hasUV, int type, int obj_pass_index)
+bool xmlInterface_t::startTriMeshPtr(unsigned int *id, int vertices, int triangles, bool hasOrco, bool hasUV, int type)
 {
 	*id = ++nextObj;
-	last_mat = nullptr;
+	last_mat = 0;
 	n_uvs = 0;
 	xmlFile << "\n<mesh vertices=\"" << vertices << "\" faces=\"" << triangles
-			<< "\" has_orco=\"" << hasOrco << "\" has_uv=\"" << hasUV << "\" type=\"" << type << "\" obj_pass_index=\"" << obj_pass_index << "\">\n";
+			<< "\" has_orco=\"" << hasOrco << "\" has_uv=\"" << hasUV << "\" type=\"" << type <<"\">\n";
 	return true;
 }
 
@@ -114,7 +96,8 @@ bool xmlInterface_t::endTriMesh()
 
 bool xmlInterface_t::endCurveMesh(const material_t *mat, float strandStart, float strandEnd, float strandShape)
 {
-	auto i = materials.find(mat);
+	std::map<const material_t *, std::string>::const_iterator i;
+	i = materials.find(mat);
 	if(i == materials.end()) return false;
 	xmlFile << "\t\t\t<set_material sval=\"" << i->second << "\"/>\n"
 			<< "\t\t\t<strand_start fval=\"" << strandStart << "\"/>\n"
@@ -146,7 +129,8 @@ bool xmlInterface_t::addTriangle(int a, int b, int c, const material_t *mat)
 {
 	if(mat != last_mat) //need to set current material
 	{
-		auto i = materials.find(mat);
+		std::map<const material_t *, std::string>::const_iterator i;
+		i = materials.find(mat);
 		if(i == materials.end()) return false;
 		xmlFile << "\t\t\t<set_material sval=\"" << i->second << "\"/>\n";
 		last_mat = mat;
@@ -159,7 +143,8 @@ bool xmlInterface_t::addTriangle(int a, int b, int c, int uv_a, int uv_b, int uv
 {
 	if(mat != last_mat) //need to set current material
 	{
-		auto i = materials.find(mat);
+		std::map<const material_t *, std::string>::const_iterator i;
+		i = materials.find(mat);
 		if(i == materials.end()) return false;
 		xmlFile << "\t\t\t<set_material sval=\"" << i->second << "\"/>\n";
 		last_mat = mat;
@@ -181,7 +166,7 @@ bool xmlInterface_t::smoothMesh(unsigned int id, double angle)
 	return true;
 }
 
-inline void writeParam(const std::string &name, const parameter_t &param, std::ofstream &xmlFile, colorSpaces_t XMLColorSpace, float XMLGamma)
+inline void writeParam(const std::string &name, const parameter_t &param, std::ofstream &xmlFile)
 {
 	int i=0;
 	bool b=false;
@@ -209,7 +194,6 @@ inline void writeParam(const std::string &name, const parameter_t &param, std::o
 			xmlFile << "<" << name << " x=\"" << p.x << "\" y=\"" << p.y << "\" z=\"" << p.z << "\"/>\n"; break;
 		case TYPE_COLOR:
 			param.getVal(c);
-			c.ColorSpace_from_linearRGB(XMLColorSpace, XMLGamma);	//Color values are encoded to the desired color space before saving them to the XML file
 			xmlFile << "<" << name << " r=\"" << c.R << "\" g=\"" << c.G << "\" b=\"" << c.B << "\" a=\"" << c.A << "\"/>\n"; break;
 		default:
 			std::cerr << "unknown parameter type!\n";
@@ -236,13 +220,15 @@ void xmlInterface_t::writeParamMap(const paraMap_t &pmap, int indent)
 {
 	std::string tabs(indent, '\t');
 	const std::map< std::string, parameter_t > *dict = pmap.getDict();
-	for(auto ip = dict->begin(); ip!= dict->end(); ++ip)
+	std::map< std::string, parameter_t >::const_iterator ip;
+	for(ip = dict->begin(); ip!= dict->end(); ++ip)
 	{
 		xmlFile << tabs;
-		writeParam(ip->first, ip->second, xmlFile, XMLColorSpace, XMLGamma);
+		writeParam(ip->first, ip->second, xmlFile);
 	}
 	const std::map< std::string, matrix4x4_t > *mdict = pmap.getMDict();
-	for(auto im = mdict->begin(); im!= mdict->end(); ++im)
+	std::map< std::string, matrix4x4_t >::const_iterator im;
+	for(im = mdict->begin(); im!= mdict->end(); ++im)
 	{
 		xmlFile << tabs;
 		writeMatrix(im->first, im->second, xmlFile);
@@ -252,11 +238,8 @@ void xmlInterface_t::writeParamMap(const paraMap_t &pmap, int indent)
 void xmlInterface_t::writeParamList(int indent)
 {
 	std::string tabs(indent, '\t');
-
-	auto ip=eparams->begin();
-	auto end=eparams->end();
-	
-	for(; ip!= end; ++ip)
+	std::list<paraMap_t>::const_iterator ip, end;
+	for(ip=eparams->begin(), end=eparams->end(); ip!= end; ++ip)
 	{
 		xmlFile << tabs << "<list_element>\n";
 		writeParamMap(*ip, indent+1);
@@ -269,7 +252,7 @@ light_t* 		xmlInterface_t::createLight(const char* name)
 	xmlFile << "\n<light name=\"" << name << "\">\n";
 	writeParamMap(*params);
 	xmlFile << "</light>\n";
-	return nullptr;
+	return 0;
 }
 
 texture_t* 		xmlInterface_t::createTexture(const char* name)
@@ -277,7 +260,7 @@ texture_t* 		xmlInterface_t::createTexture(const char* name)
 	xmlFile << "\n<texture name=\"" << name << "\">\n";
 	writeParamMap(*params);
 	xmlFile << "</texture>\n";
-	return nullptr;
+	return 0;
 }
 
 material_t* 	xmlInterface_t::createMaterial(const char* name)
@@ -295,21 +278,21 @@ camera_t* 		xmlInterface_t::createCamera(const char* name)
 	xmlFile << "\n<camera name=\"" << name << "\">\n";
 	writeParamMap(*params);
 	xmlFile << "</camera>\n";
-	return nullptr;
+	return 0;
 }
 background_t* 	xmlInterface_t::createBackground(const char* name)
 {
 	xmlFile << "\n<background name=\"" << name << "\">\n";
 	writeParamMap(*params);
 	xmlFile << "</background>\n";
-	return nullptr;
+	return 0;
 }
 integrator_t* 	xmlInterface_t::createIntegrator(const char* name)
 {
 	xmlFile << "\n<integrator name=\"" << name << "\">\n";
 	writeParamMap(*params);
 	xmlFile << "</integrator>\n";
-	return nullptr;
+	return 0;
 }
 
 VolumeRegion* 	xmlInterface_t::createVolumeRegion(const char* name)
@@ -317,7 +300,7 @@ VolumeRegion* 	xmlInterface_t::createVolumeRegion(const char* name)
 	xmlFile << "\n<volumeregion name=\"" << name << "\">\n";
 	writeParamMap(*params);
 	xmlFile << "</volumeregion>\n";
-	return nullptr;
+	return 0;
 }
 
 unsigned int 	xmlInterface_t::createObject(const char* name)
@@ -328,7 +311,7 @@ unsigned int 	xmlInterface_t::createObject(const char* name)
 	return ++nextObj;
 }
 
-void xmlInterface_t::render(colorOutput_t &output, progressBar_t *pb)
+void xmlInterface_t::render(colorOutput_t &output)
 {
 	xmlFile << "\n<render>\n";
 	writeParamMap(*params);
@@ -336,17 +319,6 @@ void xmlInterface_t::render(colorOutput_t &output, progressBar_t *pb)
 	xmlFile << "</scene>" << yendl;
 	xmlFile.flush();
 	xmlFile.close();
-}
-
-void xmlInterface_t::setXMLColorSpace(std::string color_space_string, float gammaVal)
-{
-	if(color_space_string == "sRGB") XMLColorSpace = SRGB;
-	else if(color_space_string == "XYZ") XMLColorSpace = XYZ_D65;
-	else if(color_space_string == "LinearRGB") XMLColorSpace = LINEAR_RGB;
-	else if(color_space_string == "Raw_Manual_Gamma") XMLColorSpace = RAW_MANUAL_GAMMA;
-	else XMLColorSpace = SRGB;
-	
-	XMLGamma = gammaVal;
 }
 
 extern "C"

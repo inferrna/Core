@@ -31,13 +31,11 @@ class darkSkyBackground_t: public background_t
 {
 	public:
 		darkSkyBackground_t(const point3d_t dir, float turb, float pwr, float skyBright, bool clamp, float av, float bv, float cv, float dv, float ev,
-							float altitude, bool night, float exp, bool genc, ColorSpaces cs, bool ibl, bool with_caustic);
-		virtual color_t operator() (const ray_t &ray, renderState_t &state, bool from_postprocessed=false) const;
-		virtual color_t eval(const ray_t &ray, bool from_postprocessed=false) const;
+							float altitude, bool night, float exp, bool genc, ColorSpaces cs);
+		virtual color_t operator() (const ray_t &ray, renderState_t &state, bool filtered=false) const;
+		virtual color_t eval(const ray_t &ray, bool filtered=false) const;
 		virtual ~darkSkyBackground_t();
 		static background_t *factory(paraMap_t &,renderEnvironment_t &);
-		bool hasIBL() { return withIBL; }
-		bool shootsCaustic() { return shootCaustic; }
 		color_t getAttenuatedSunColor();
 
 	protected:
@@ -59,14 +57,11 @@ class darkSkyBackground_t: public background_t
 		ColorConv convert;
 		float alt;
 		bool nightSky;
-		bool withIBL;
-		bool shootCaustic;
-		bool shootDiffuse;
 };
 
 darkSkyBackground_t::darkSkyBackground_t(const point3d_t dir, float turb, float pwr, float skyBright, bool clamp,float av, float bv, float cv, float dv, float ev,
-										float altitude, bool night, float exp, bool genc, ColorSpaces cs, bool ibl, bool with_caustic):
-									   power(pwr * skyBright), skyBrightness(skyBright), convert(clamp, genc, cs, exp), alt(altitude), nightSky(night), withIBL(ibl), shootCaustic(with_caustic)
+										float altitude, bool night, float exp, bool genc, ColorSpaces cs):
+									   power(pwr * skyBright), skyBrightness(skyBright), convert(clamp, genc, cs, exp), alt(altitude), nightSky(night)
 {
 
 
@@ -79,11 +74,11 @@ darkSkyBackground_t::darkSkyBackground_t(const point3d_t dir, float turb, float 
 	thetaS = fAcos(sunDir.z);
 
 	act = (nightSky)?"ON":"OFF";
-	Y_VERBOSE << "DarkSky: Night mode [ " << act << " ]" << yendl;
-	Y_VERBOSE << "DarkSky: Solar Declination in Degrees (" << radToDeg(thetaS) << ")" << yendl;
+	Y_INFO << "DarkSky: Night mode [ " << act << " ]" << yendl;
+	Y_INFO << "DarkSky: Solar Declination in Degrees (" << radToDeg(thetaS) << ")" << yendl;
 	act = (clamp)?"active.":"inactive.";
-	Y_VERBOSE << "DarkSky: RGB Clamping " << act << yendl;
-	Y_VERBOSE << "DarkSky: Altitude " << alt << yendl;
+	Y_INFO << "DarkSky: RGB Clamping " << act << yendl;
+	Y_INFO << "DarkSky: Altitude " << alt << yendl;
 
 	cosThetaS = fCos(thetaS);
 	cosTheta2 = cosThetaS * cosThetaS;
@@ -240,13 +235,13 @@ inline color_t darkSkyBackground_t::getSkyCol(const ray_t &ray) const
 	return skyCol * skyBrightness;
 }
 
-color_t darkSkyBackground_t::operator() (const ray_t &ray, renderState_t &state, bool from_postprocessed) const
+color_t darkSkyBackground_t::operator() (const ray_t &ray, renderState_t &state, bool filtered) const
 {
 	color_t ret = getSkyCol(ray);
 	return ret;
 }
 
-color_t darkSkyBackground_t::eval(const ray_t &ray, bool from_postprocessed) const
+color_t darkSkyBackground_t::eval(const ray_t &ray, bool filtered) const
 {
 	color_t ret = getSkyCol(ray)  * power;
 	return ret;
@@ -272,10 +267,8 @@ background_t *darkSkyBackground_t::factory(paraMap_t &params,renderEnvironment_t
 	bool gammaEnc = true;
 	std::string cs = "CIE (E)";
 	float exp = 1.f;
-	bool castShadows = true;
-	bool castShadowsSun = true;
 
-	Y_VERBOSE << "DarkSky: Begin" << yendl;
+	Y_INFO << "DarkSky: Begin" << yendl;
 
 	params.getParam("from", dir);
 	params.getParam("turbidity", turb);
@@ -301,8 +294,6 @@ background_t *darkSkyBackground_t::factory(paraMap_t &params,renderEnvironment_t
 	params.getParam("with_caustic", caus);
 	params.getParam("with_diffuse", diff);
 	params.getParam("light_samples", bgl_samples);
-	params.getParam("cast_shadows", castShadows);
-	params.getParam("cast_shadows_sun", castShadowsSun);
 
 	params.getParam("night", night);
 
@@ -319,7 +310,7 @@ background_t *darkSkyBackground_t::factory(paraMap_t &params,renderEnvironment_t
 	}
 
 	darkSkyBackground_t *darkSky = new darkSkyBackground_t(dir, turb, power, bright, clamp, av, bv, cv, dv, ev,
-																altitude, night, exp, gammaEnc, colorS, bgl, caus);
+																altitude, night, exp, gammaEnc, colorS);
 
 	if (add_sun && radToDeg(fAcos(dir.z)) < 100.0)
 	{
@@ -329,7 +320,7 @@ background_t *darkSkyBackground_t::factory(paraMap_t &params,renderEnvironment_t
 		color_t suncol = darkSky->getAttenuatedSunColor();
 		double angle = 0.5 * (2.0 - d.z);
 
-		Y_VERBOSE << "DarkSky: SunColor = " << suncol << yendl;
+		Y_INFO << "DarkSky: SunColor = " << suncol << yendl;
 
 		paraMap_t p;
 		p["type"] = std::string("sunlight");
@@ -338,11 +329,8 @@ background_t *darkSkyBackground_t::factory(paraMap_t &params,renderEnvironment_t
 		p["angle"] = parameter_t(angle);
 		p["power"] = parameter_t(pw);
 		p["samples"] = bgl_samples;
-		p["cast_shadows"] = castShadowsSun;
-		p["with_caustic"] = caus;
-		p["with_diffuse"] = diff;
 
-		Y_VERBOSE << "DarkSky: Adding a \"Real Sun\"" << yendl;
+		Y_INFO << "DarkSky: Adding a \"Real Sun\"" << yendl;
 
 		light_t *light = render.createLight("DarkSky_RealSun", p);
 
@@ -354,11 +342,10 @@ background_t *darkSkyBackground_t::factory(paraMap_t &params,renderEnvironment_t
 		paraMap_t bgp;
 		bgp["type"] = std::string("bglight");
 		bgp["samples"] = bgl_samples;
-		bgp["with_caustic"] = caus;
-		bgp["with_diffuse"] = diff;
-		bgp["cast_shadows"] = castShadows;
+		bgp["shoot_caustics"] = caus;
+		bgp["shoot_diffuse"] = diff;
 
-		Y_VERBOSE << "DarkSky: Adding background light" << yendl;
+		Y_INFO << "DarkSky: Adding background light" << yendl;
 
 		light_t *bglight = render.createLight("DarkSky_bgLight", bgp);
 
@@ -367,7 +354,7 @@ background_t *darkSkyBackground_t::factory(paraMap_t &params,renderEnvironment_t
 		if(bglight) render.getScene()->addLight(bglight);
 	}
 
-	Y_VERBOSE << "DarkSky: End" << yendl;
+	Y_INFO << "DarkSky: End" << yendl;
 
 	return darkSky;
 }

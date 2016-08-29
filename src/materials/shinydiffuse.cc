@@ -5,16 +5,15 @@
 
 __BEGIN_YAFRAY
 
-shinyDiffuseMat_t::shinyDiffuseMat_t(const color_t &diffuseColor, const color_t &mirrorColor, float diffuseStrength, float transparencyStrength, float translucencyStrength, float mirrorStrength, float emitStrength, float transmitFilterStrength, visibility_t eVisibility):
-            mDiffuseColor(diffuseColor), mMirrorColor(mirrorColor),
-            mMirrorStrength(mirrorStrength), mTransparencyStrength(transparencyStrength), mTranslucencyStrength(translucencyStrength), mDiffuseStrength(diffuseStrength), mTransmitFilterStrength(transmitFilterStrength)
+shinyDiffuseMat_t::shinyDiffuseMat_t(const color_t &diffuseColor, const color_t &mirrorColor, float diffuseStrength, float transparencyStrength, float translucencyStrength, float mirrorStrength, float emitStrength, float transmitFilterStrength):
+            mIsTransparent(false), mIsTranslucent(false), mIsMirror(false), mIsDiffuse(false), mHasFresnelEffect(false),
+            mDiffuseShader(0), mBumpShader(0), mTransparencyShader(0), mTranslucencyShader(0), mMirrorShader(0), mMirrorColorShader(0), mDiffuseColor(diffuseColor), mMirrorColor(mirrorColor),
+            mMirrorStrength(mirrorStrength), mTransparencyStrength(transparencyStrength), mTranslucencyStrength(translucencyStrength), mDiffuseStrength(diffuseStrength), mTransmitFilterStrength(transmitFilterStrength), mUseOrenNayar(false), nBSDF(0)
 {
-    mVisibility = eVisibility;
     mEmitColor = emitStrength * diffuseColor;
     mEmitStrength = emitStrength;
     bsdfFlags = BSDF_NONE;
     if(mEmitStrength > 0.f) bsdfFlags |= BSDF_EMIT;
-    mVisibility = eVisibility;
 }
 
 shinyDiffuseMat_t::~shinyDiffuseMat_t()
@@ -98,7 +97,7 @@ int shinyDiffuseMat_t::getComponents(const bool *useNode, nodeStack_t &stack, fl
     return 0;
 }
 
-inline void shinyDiffuseMat_t::getFresnel(const vector3d_t &wo, const vector3d_t &n, float &Kr, float &currentIORSquared) const
+inline void shinyDiffuseMat_t::getFresnel(const vector3d_t &wo, const vector3d_t &n, float &Kr) const
 {
     if(mHasFresnelEffect)
     {
@@ -114,7 +113,7 @@ inline void shinyDiffuseMat_t::getFresnel(const vector3d_t &wo, const vector3d_t
         }
 
         float c = wo*N;
-        float g = currentIORSquared + c*c - 1.f;
+        float g = mIOR_Squared + c*c - 1.f;
         if(g < 0.f) g = 0.f;
         else g = fSqrt(g);
         float aux = c * (g+c);
@@ -157,8 +156,8 @@ void shinyDiffuseMat_t::initBSDF(const renderState_t &state, surfacePoint_t &sp,
     }
 
     //eval viewindependent nodes
-    auto end=allViewindep.end();
-    for(auto iter = allViewindep.begin(); iter!=end; ++iter) (*iter)->eval(stack, state, sp);
+    std::vector<shaderNode_t *>::const_iterator iter, end=allViewindep.end();
+    for(iter = allViewindep.begin(); iter!=end; ++iter) (*iter)->eval(stack, state, sp);
     bsdfTypes=bsdfFlags;
 
     getComponents(viNodes, stack, dat->component);
@@ -183,7 +182,7 @@ void shinyDiffuseMat_t::initOrenNayar(double sigma)
  *  @param  N  Surface normal
  *  @note   http://en.wikipedia.org/wiki/Oren-Nayar_reflectance_model
  */
-float shinyDiffuseMat_t::OrenNayar(const vector3d_t &wi, const vector3d_t &wo, const vector3d_t &N, bool useTextureSigma, double textureSigma) const
+CFLOAT shinyDiffuseMat_t::OrenNayar(const vector3d_t &wi, const vector3d_t &wo, const vector3d_t &N) const
 {
     //PFLOAT cos_ti = std::max(-1.f,std::min(1.f,N*wi));
     //PFLOAT cos_to = std::max(-1.f,std::min(1.f,N*wo));
@@ -202,7 +201,7 @@ float shinyDiffuseMat_t::OrenNayar(const vector3d_t &wi, const vector3d_t &wo, c
         maxcos_f = std::max(0.f, v1*v2);
     }
 
-    float sin_alpha, tan_beta;
+    CFLOAT sin_alpha, tan_beta;
 
     if(cos_to >= cos_ti)
     {
@@ -217,24 +216,14 @@ float shinyDiffuseMat_t::OrenNayar(const vector3d_t &wi, const vector3d_t &wo, c
         //tan_beta = fSqrt(1.f - cos_ti*cos_ti) / ((cos_ti == 0.f)?1e-8f:cos_ti); // white (black on windows) dots fix for oren-nayar, could happen with bad normals
     }
 
-    if (useTextureSigma)
-    {
-        double sigma_squared = textureSigma * textureSigma;
-        double mOrenNayar_TextureA = 1.0 - 0.5 * (sigma_squared / (sigma_squared + 0.33));
-        double mOrenNayar_TextureB = 0.45 * sigma_squared / (sigma_squared + 0.09);
-        return std::min(1.f, std::max(0.f, (float) (mOrenNayar_TextureA + mOrenNayar_TextureB * maxcos_f * sin_alpha * tan_beta)));
-    }
-    else
-    {
-        return std::min(1.f, std::max(0.f, (float) (mOrenNayar_A + mOrenNayar_B * maxcos_f * sin_alpha * tan_beta)));
-    }
+    return mOrenNayar_A + mOrenNayar_B * maxcos_f * sin_alpha * tan_beta;
 }
 
 
-color_t shinyDiffuseMat_t::eval(const renderState_t &state, const surfacePoint_t &sp, const vector3d_t &wo, const vector3d_t &wl, BSDF_t bsdfs, bool force_eval)const
+color_t shinyDiffuseMat_t::eval(const renderState_t &state, const surfacePoint_t &sp, const vector3d_t &wo, const vector3d_t &wl, BSDF_t bsdfs)const
 {
-    float cos_Ng_wo = sp.Ng*wo;
-    float cos_Ng_wl = sp.Ng*wl;
+    PFLOAT cos_Ng_wo = sp.Ng*wo;
+    PFLOAT cos_Ng_wl = sp.Ng*wl;
     // face forward:
     vector3d_t N = FACE_FORWARD(sp.Ng, sp.N, wo);
     if(!(bsdfs & bsdfFlags & BSDF_DIFFUSE)) return color_t(0.f);
@@ -243,16 +232,7 @@ color_t shinyDiffuseMat_t::eval(const renderState_t &state, const surfacePoint_t
     nodeStack_t stack(dat->nodeStack);
 
     float Kr;
-
-    float cur_ior_squared;
-    if(iorS)
-    {
-        cur_ior_squared = IOR + iorS->getScalar(stack);
-        cur_ior_squared *= cur_ior_squared;            
-    }
-    else cur_ior_squared = mIOR_Squared;
-    
-    getFresnel(wo, N, Kr, cur_ior_squared);
+    getFresnel(wo, N, Kr);
     float mT = (1.f - Kr*dat->component[0])*(1.f - dat->component[1]);
 
     bool transmit = ( cos_Ng_wo * cos_Ng_wl ) < 0.f;
@@ -264,22 +244,8 @@ color_t shinyDiffuseMat_t::eval(const renderState_t &state, const surfacePoint_t
 
     if(N*wl < 0.0) return color_t(0.f);
     float mD = mT*(1.f - dat->component[2]) * dat->component[3];
-
-    if(mUseOrenNayar)
-    {
-        double textureSigma=(mSigmaOrenShader ? mSigmaOrenShader->getScalar(stack) : 0.f);
-        bool useTextureSigma=(mSigmaOrenShader ? true : false);
-        if(mUseOrenNayar) mD *= OrenNayar(wo, wl, N, useTextureSigma, textureSigma);
-    }
-
-    if(mDiffuseReflShader) mD *= mDiffuseReflShader->getScalar(stack);
-    
-    color_t result = mD * (mDiffuseShader ? mDiffuseShader->getColor(stack) : mDiffuseColor);
-
-    float wireFrameAmount = (mWireFrameShader ? mWireFrameShader->getScalar(stack) * mWireFrameAmount : mWireFrameAmount);
-    applyWireFrame(result, wireFrameAmount, sp);
-
-    return result;
+    if(mUseOrenNayar) mD *= OrenNayar(wo, wl, N);
+    return mD * (mDiffuseShader ? mDiffuseShader->getColor(stack) : mDiffuseColor);
 }
 
 color_t shinyDiffuseMat_t::emit(const renderState_t &state, const surfacePoint_t &sp, const vector3d_t &wo)const
@@ -287,34 +253,20 @@ color_t shinyDiffuseMat_t::emit(const renderState_t &state, const surfacePoint_t
     SDDat_t *dat = (SDDat_t *)state.userdata;
     nodeStack_t stack(dat->nodeStack);
 
-    color_t result = (mDiffuseShader ? mDiffuseShader->getColor(stack) * mEmitStrength : mEmitColor);
-        
-    float wireFrameAmount = (mWireFrameShader ? mWireFrameShader->getScalar(stack) * mWireFrameAmount : mWireFrameAmount);
-    applyWireFrame(result, wireFrameAmount, sp);
-
-    return result;
+    return (mDiffuseShader ? mDiffuseShader->getColor(stack) * mEmitStrength : mEmitColor);
 }
 
 color_t shinyDiffuseMat_t::sample(const renderState_t &state, const surfacePoint_t &sp, const vector3d_t &wo, vector3d_t &wi, sample_t &s, float &W)const
 {
     float accumC[4];
-    float cos_Ng_wo = sp.Ng*wo, cos_Ng_wi, cos_N;
+    PFLOAT cos_Ng_wo = sp.Ng*wo, cos_Ng_wi, cos_N;
     vector3d_t N = FACE_FORWARD(sp.Ng, sp.N, wo);
 
     SDDat_t *dat = (SDDat_t *)state.userdata;
     nodeStack_t stack(dat->nodeStack);
 
     float Kr;
-
-    float cur_ior_squared;
-    if(iorS)
-    {
-        cur_ior_squared = IOR + iorS->getScalar(stack);
-        cur_ior_squared *= cur_ior_squared;            
-    }
-    else cur_ior_squared = mIOR_Squared;
-
-    getFresnel(wo, N, Kr, cur_ior_squared);
+    getFresnel(wo, N, Kr);
     accumulate(dat->component, accumC, Kr);
 
     float sum=0.f, val[4], width[4];
@@ -354,9 +306,9 @@ color_t shinyDiffuseMat_t::sample(const renderState_t &state, const surfacePoint
             if(s.reverse)
             {
                 s.pdf_back = s.pdf;
-                s.col_back = scolor/std::max(std::fabs(sp.N*wo), 1.0e-6f);
+                s.col_back = scolor/std::fabs(sp.N*wo);
             }
-            scolor *= 1.f/std::max(std::fabs(sp.N*wi), 1.0e-6f);
+            scolor *= 1.f/std::fabs(sp.N*wi);
             break;
         case (BSDF_TRANSMIT | BSDF_FILTER): // "specular" transmit
             wi = -wo;
@@ -375,22 +327,11 @@ color_t shinyDiffuseMat_t::sample(const renderState_t &state, const surfacePoint
             wi = SampleCosHemisphere(N, sp.NU, sp.NV, s1, s.s2);
             cos_Ng_wi = sp.Ng*wi;
             if(cos_Ng_wo*cos_Ng_wi > 0) scolor = accumC[3] * (mDiffuseShader ? mDiffuseShader->getColor(stack) : mDiffuseColor);
-
-            if(mUseOrenNayar)
-            {
-                double textureSigma=(mSigmaOrenShader ? mSigmaOrenShader->getScalar(stack) : 0.f);
-                bool useTextureSigma=(mSigmaOrenShader ? true : false);
-        
-                scolor *= OrenNayar(wo, wi, N, useTextureSigma, textureSigma);
-            }
+            if(mUseOrenNayar) scolor *= OrenNayar(wo, wi, N);
             s.pdf = std::fabs(wi*N) * width[pick]; break;
     }
     s.sampledFlags = choice[pick];
     W = (std::fabs(wi*sp.N))/(s.pdf*0.99f + 0.01f);
-    
-    float wireFrameAmount = (mWireFrameShader ? mWireFrameShader->getScalar(stack) * mWireFrameAmount : mWireFrameAmount);
-    applyWireFrame(scolor, wireFrameAmount, sp);
-    
     return scolor;
 }
 
@@ -399,23 +340,12 @@ float shinyDiffuseMat_t::pdf(const renderState_t &state, const surfacePoint_t &s
     if(!(bsdfs & BSDF_DIFFUSE)) return 0.f;
 
     SDDat_t *dat = (SDDat_t *)state.userdata;
-    nodeStack_t stack(dat->nodeStack);
-    
     float pdf=0.f;
     float accumC[4];
-    float cos_Ng_wo = sp.Ng*wo, cos_Ng_wi;
+    PFLOAT cos_Ng_wo = sp.Ng*wo, cos_Ng_wi;
     vector3d_t N = FACE_FORWARD(sp.Ng, sp.N, wo);
     float Kr;
-
-    float cur_ior_squared;
-    if(iorS)
-    {
-        cur_ior_squared = IOR + iorS->getScalar(stack);
-        cur_ior_squared *= cur_ior_squared;            
-    }
-    else cur_ior_squared = mIOR_Squared;
-
-    getFresnel(wo, N, Kr, cur_ior_squared);
+    getFresnel(wo, N, Kr);
 
     accumulate(dat->component, accumC, Kr);
     float sum=0.f, width;
@@ -468,16 +398,7 @@ void shinyDiffuseMat_t::getSpecular(const renderState_t &state, const surfacePoi
     const vector3d_t Ng = backface ? -sp.Ng : sp.Ng;
 
     float Kr;
-
-    float cur_ior_squared;
-    if(iorS)
-    {
-        cur_ior_squared = IOR + iorS->getScalar(stack);
-        cur_ior_squared *= cur_ior_squared;            
-    }
-    else cur_ior_squared = mIOR_Squared;
-
-    getFresnel(wo, N, Kr, cur_ior_squared);
+    getFresnel(wo, N, Kr);
 
     if(mIsTransparent)
     {
@@ -497,7 +418,7 @@ void shinyDiffuseMat_t::getSpecular(const renderState_t &state, const surfacePoi
         //Y_WARNING << sp.N << " | " << N << yendl;
         wi[0] = wo;
         wi[0].reflect(N);
-        float cos_wi_Ng = wi[0]*Ng;
+        PFLOAT cos_wi_Ng = wi[0]*Ng;
         if(cos_wi_Ng < 0.01)
         {
             wi[0] += (0.01-cos_wi_Ng)*Ng;
@@ -509,31 +430,17 @@ void shinyDiffuseMat_t::getSpecular(const renderState_t &state, const surfacePoi
     {
         doReflect = false;
     }
-
-    float wireFrameAmount = (mWireFrameShader ? mWireFrameShader->getScalar(stack) * mWireFrameAmount : mWireFrameAmount);
-    applyWireFrame(col, wireFrameAmount, sp);
 }
 
 color_t shinyDiffuseMat_t::getTransparency(const renderState_t &state, const surfacePoint_t &sp, const vector3d_t &wo)const
 {
-    if(!mIsTransparent) return color_t(0.f);
-    
     nodeStack_t stack(state.userdata);
-    auto end=allSorted.end();
-    for(auto iter = allSorted.begin(); iter!=end; ++iter) (*iter)->eval(stack, state, sp);
+    std::vector<shaderNode_t *>::const_iterator iter, end=allSorted.end();
+    for(iter = allSorted.begin(); iter!=end; ++iter) (*iter)->eval(stack, state, sp);
     float accum=1.f;
     float Kr;
     vector3d_t N = FACE_FORWARD(sp.Ng, sp.N, wo);
-
-    float cur_ior_squared;
-    if(iorS)
-    {
-        cur_ior_squared = IOR + iorS->getScalar(stack);
-        cur_ior_squared *= cur_ior_squared;            
-    }
-    else cur_ior_squared = mIOR_Squared;
-
-    getFresnel(wo, N, Kr, cur_ior_squared);
+    getFresnel(wo, N, Kr);
 
     if(mIsMirror)
     {
@@ -544,41 +451,19 @@ color_t shinyDiffuseMat_t::getTransparency(const renderState_t &state, const sur
         accum *= mTransparencyShader ? mTransparencyShader->getScalar(stack) * accum : mTransparencyStrength * accum;
     }
     color_t tcol = mTransmitFilterStrength * (mDiffuseShader ? mDiffuseShader->getColor(stack) : mDiffuseColor) + color_t(1.f-mTransmitFilterStrength);
-    
-    color_t result = accum * tcol;
-
-    float wireFrameAmount = (mWireFrameShader ? mWireFrameShader->getScalar(stack) * mWireFrameAmount : mWireFrameAmount);
-    applyWireFrame(result, wireFrameAmount, sp);
-
-    return result;
+    return accum * tcol;
 }
 
-float shinyDiffuseMat_t::getAlpha(const renderState_t &state, const surfacePoint_t &sp, const vector3d_t &wo)const
+CFLOAT shinyDiffuseMat_t::getAlpha(const renderState_t &state, const surfacePoint_t &sp, const vector3d_t &wo)const
 {
     SDDat_t *dat = (SDDat_t *)state.userdata;
-    nodeStack_t stack(dat->nodeStack);
-    
     if(mIsTransparent)
     {
         vector3d_t N = FACE_FORWARD(sp.Ng, sp.N, wo);
         float Kr;
-
-        float cur_ior_squared;
-        if(iorS)
-        {
-            cur_ior_squared = IOR + iorS->getScalar(stack);
-            cur_ior_squared *= cur_ior_squared;            
-        }
-        else cur_ior_squared = mIOR_Squared;
-
-        getFresnel(wo, N, Kr, cur_ior_squared);
-        float refl = (1.f - dat->component[0]*Kr) * dat->component[1];
-        float result = 1.f - refl;
-
-        float wireFrameAmount = (mWireFrameShader ? mWireFrameShader->getScalar(stack) * mWireFrameAmount : mWireFrameAmount);
-        applyWireFrame(result, wireFrameAmount, sp);
-
-        return result;
+        getFresnel(wo, N, Kr);
+        CFLOAT refl = (1.f - dat->component[0]*Kr) * dat->component[1];
+        return 1.f - refl;
     }
     return 1.f;
 }
@@ -588,23 +473,14 @@ material_t* shinyDiffuseMat_t::factory(paraMap_t &params, std::list<paraMap_t> &
     /// Material Parameters
     color_t diffuseColor=1.f;
     color_t mirrorColor=1.f;
-    float diffuseStrength=1.f;
+    CFLOAT diffuseStrength=1.f;
     float transparencyStrength=0.f;
     float translucencyStrength=0.f;
     float mirrorStrength=0.f;
     float emitStrength = 0.f;
     bool hasFresnelEffect=false;
-    std::string sVisibility = "normal";
-	visibility_t visibility = NORMAL_VISIBLE;
-    bool receive_shadows = true;
-    float IOR = 1.33f;
+    double IOR = 1.33;
     double transmitFilterStrength=1.0;
-    int mat_pass_index = 0;
-	int additionaldepth = 0;
-    float WireFrameAmount = 0.f;           //!< Wireframe shading amount   
-    float WireFrameThickness = 0.01f;      //!< Wireframe thickness
-    float WireFrameExponent = 0.f;         //!< Wireframe exponent (0.f = solid, 1.f=linearly gradual, etc)
-    color_t WireFrameColor = color_t(1.f); //!< Wireframe shading color
 
     params.getParam("color",            diffuseColor);
     params.getParam("mirror_color",     mirrorColor);
@@ -616,38 +492,12 @@ material_t* shinyDiffuseMat_t::factory(paraMap_t &params, std::list<paraMap_t> &
     params.getParam("IOR",              IOR);
     params.getParam("fresnel_effect",   hasFresnelEffect);
     params.getParam("transmit_filter",  transmitFilterStrength);
-    
-    params.getParam("receive_shadows",  receive_shadows);
-    params.getParam("visibility",       sVisibility);
-    params.getParam("mat_pass_index",   mat_pass_index);
-	params.getParam("additionaldepth",   additionaldepth);
-	
-    params.getParam("wireframe_amount",  WireFrameAmount);
-    params.getParam("wireframe_thickness",  WireFrameThickness);
-    params.getParam("wireframe_exponent",  WireFrameExponent);
-    params.getParam("wireframe_color",  WireFrameColor);
-    
-	if(sVisibility == "normal") visibility = NORMAL_VISIBLE;
-	else if(sVisibility == "no_shadows") visibility = VISIBLE_NO_SHADOWS;
-	else if(sVisibility == "shadow_only") visibility = INVISIBLE_SHADOWS_ONLY;
-	else if(sVisibility == "invisible") visibility = INVISIBLE;
-	else visibility = NORMAL_VISIBLE;
 
     // !!remember to put diffuse multiplier in material itself!
-    shinyDiffuseMat_t *mat = new shinyDiffuseMat_t(diffuseColor, mirrorColor, diffuseStrength, transparencyStrength, translucencyStrength, mirrorStrength, emitStrength, transmitFilterStrength, visibility);
-
-    mat->setMaterialIndex(mat_pass_index);
-    mat->mReceiveShadows = receive_shadows;
-	mat->additionalDepth = additionaldepth;
-
-    mat->mWireFrameAmount = WireFrameAmount;
-    mat->mWireFrameThickness = WireFrameThickness;
-    mat->mWireFrameExponent = WireFrameExponent;
-    mat->mWireFrameColor = WireFrameColor;
+    shinyDiffuseMat_t *mat = new shinyDiffuseMat_t(diffuseColor, mirrorColor, diffuseStrength, transparencyStrength, translucencyStrength, mirrorStrength, emitStrength, transmitFilterStrength);
 
     if(hasFresnelEffect)
     {
-        mat->IOR = IOR;
         mat->mIOR_Squared = IOR * IOR;
         mat->mHasFresnelEffect = true;
     }
@@ -668,16 +518,12 @@ material_t* shinyDiffuseMat_t::factory(paraMap_t &params, std::list<paraMap_t> &
     std::map<std::string, shaderNode_t *> nodeList;
 
     // prepare shader nodes list
-    nodeList["diffuse_shader"]      = nullptr;
-    nodeList["mirror_color_shader"] = nullptr;
-    nodeList["bump_shader"]         = nullptr;
-    nodeList["mirror_shader"]       = nullptr;
-    nodeList["transparency_shader"] = nullptr;
-    nodeList["translucency_shader"] = nullptr;
-    nodeList["sigma_oren_shader"]   = nullptr;
-    nodeList["diffuse_refl_shader"] = nullptr;
-    nodeList["IOR_shader"]          = nullptr;
-    nodeList["wireframe_shader"]    = nullptr;
+    nodeList["diffuse_shader"]      = NULL;
+    nodeList["mirror_color_shader"] = NULL;
+    nodeList["bump_shader"]         = NULL;
+    nodeList["mirror_shader"]       = NULL;
+    nodeList["transparency_shader"] = NULL;
+    nodeList["translucency_shader"] = NULL;
 
     // load shader nodes:
     if(mat->loadNodes(paramsList, render))
@@ -692,11 +538,7 @@ material_t* shinyDiffuseMat_t::factory(paraMap_t &params, std::list<paraMap_t> &
     mat->mMirrorShader       = nodeList["mirror_shader"];
     mat->mTransparencyShader = nodeList["transparency_shader"];
     mat->mTranslucencyShader = nodeList["translucency_shader"];
-    mat->mSigmaOrenShader    = nodeList["sigma_oren_shader"];
-    mat->mDiffuseReflShader  = nodeList["diffuse_refl_shader"];
-    mat->iorS                = nodeList["IOR_shader"];
-    mat->mWireFrameShader    = nodeList["wireframe_shader"];
-    
+
     // solve nodes order
     if(!roots.empty())
     {
@@ -709,11 +551,7 @@ material_t* shinyDiffuseMat_t::factory(paraMap_t &params, std::list<paraMap_t> &
         if(mat->mMirrorShader)       mat->getNodeList(mat->mMirrorShader, colorNodes);
         if(mat->mTransparencyShader) mat->getNodeList(mat->mTransparencyShader, colorNodes);
         if(mat->mTranslucencyShader) mat->getNodeList(mat->mTranslucencyShader, colorNodes);
-        if(mat->mSigmaOrenShader)    mat->getNodeList(mat->mSigmaOrenShader, colorNodes);
-        if(mat->mDiffuseReflShader)  mat->getNodeList(mat->mDiffuseReflShader, colorNodes);
-        if(mat->iorS)                mat->getNodeList(mat->iorS, colorNodes);
-        if(mat->mWireFrameShader)    mat->getNodeList(mat->mWireFrameShader, colorNodes);
-        
+
         mat->filterNodes(colorNodes, mat->allViewdep,   VIEW_DEP);
         mat->filterNodes(colorNodes, mat->allViewindep, VIEW_INDEP);
 

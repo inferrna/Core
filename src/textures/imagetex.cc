@@ -26,22 +26,16 @@
 
 __BEGIN_YAFRAY
 
-textureImage_t::textureImage_t(imageHandler_t *ih, interpolationType intp, float gamma, colorSpaces_t color_space):
-				image(ih), intp_type(intp), colorSpace(color_space), gamma(gamma), mirrorX(false), mirrorY(false)
+textureImage_t::textureImage_t(imageHandler_t *ih, interpolationType intp, float gamma):
+				image(ih), intp_type(intp), gamma(gamma)
 {
 	// Empty
 }
 
 textureImage_t::~textureImage_t()
 {
-	if(postProcessedImage)
-	{
-		delete postProcessedImage;
-		postProcessedImage = nullptr;
-	}
-	
 	// Here we simply clear the pointer, yafaray's core will handle the memory cleanup
-	image = nullptr;
+	image = NULL;
 }
 
 void textureImage_t::resolution(int &x, int &y, int &z) const
@@ -51,7 +45,7 @@ void textureImage_t::resolution(int &x, int &y, int &z) const
 	z=0;
 }
 
-colorA_t textureImage_t::interpolateImage(const point3d_t &p, bool from_postprocessed) const
+colorA_t textureImage_t::interpolateImage(const point3d_t &p) const
 {
 	int x, y, x2, y2;
 	
@@ -70,9 +64,7 @@ colorA_t textureImage_t::interpolateImage(const point3d_t &p, bool from_postproc
 	x = std::max(0, std::min(resx-1, (int)xf));
 	y = std::max(0, std::min(resy-1, (int)yf));
 
-	colorA_t c1;
-	if(from_postprocessed && postProcessedImage) c1 = (*postProcessedImage)(x, y);
-	else c1 = image->getPixel(x, y);
+	colorA_t c1 = image->getPixel(x, y);
 	
 	if (intp_type == INTP_NONE) return c1;
 	
@@ -80,19 +72,10 @@ colorA_t textureImage_t::interpolateImage(const point3d_t &p, bool from_postproc
 	
 	x2 = std::min(resx-1, x+1);
 	y2 = std::min(resy-1, y+1);
-	
-	if(from_postprocessed && postProcessedImage)
-	{
-		c2 = (*postProcessedImage)(x2, y);
-		c3 = (*postProcessedImage)(x, y2);
-		c4 = (*postProcessedImage)(x2, y2);
-	}
-	else
-	{
-		c2 = image->getPixel(x2, y);
-		c3 = image->getPixel(x, y2);
-		c4 = image->getPixel(x2, y2);
-	}
+
+	c2 = image->getPixel(x2, y);
+	c3 = image->getPixel(x, y2);
+	c4 = image->getPixel(x2, y2);
 
 	float dx = xf - floor(xf);
 	float dy = yf - floor(yf);
@@ -114,37 +97,19 @@ colorA_t textureImage_t::interpolateImage(const point3d_t &p, bool from_postproc
 	int y0 = std::max(0, y-1);
 	int y3 = std::min(resy-1, y2+1);
 
-	if(from_postprocessed && postProcessedImage)
-	{
-		c0 = (*postProcessedImage)(x0, y0);
-		c5 = (*postProcessedImage)(x,  y0);
-		c6 = (*postProcessedImage)(x2, y0);
-		c7 = (*postProcessedImage)(x3, y0);
-		c8 = (*postProcessedImage)(x0, y);
-		c9 = (*postProcessedImage)(x3, y);
-		cA = (*postProcessedImage)(x0, y2);
-		cB = (*postProcessedImage)(x3, y2);
-		cC = (*postProcessedImage)(x0, y3);
-		cD = (*postProcessedImage)(x,  y3);
-		cE = (*postProcessedImage)(x2, y3);
-		cF = (*postProcessedImage)(x3, y3);
-	}
-	else
-	{
-		c0 = image->getPixel(x0, y0);
-		c5 = image->getPixel(x,  y0);
-		c6 = image->getPixel(x2, y0);
-		c7 = image->getPixel(x3, y0);
-		c8 = image->getPixel(x0, y);
-		c9 = image->getPixel(x3, y);
-		cA = image->getPixel(x0, y2);
-		cB = image->getPixel(x3, y2);
-		cC = image->getPixel(x0, y3);
-		cD = image->getPixel(x,  y3);
-		cE = image->getPixel(x2, y3);
-		cF = image->getPixel(x3, y3);
-	}
-	
+	c0 = image->getPixel(x0, y0);
+	c5 = image->getPixel(x,  y0);
+	c6 = image->getPixel(x2, y0);
+	c7 = image->getPixel(x3, y0);
+	c8 = image->getPixel(x0, y);
+	c9 = image->getPixel(x3, y);
+	cA = image->getPixel(x0, y2);
+	cB = image->getPixel(x3, y2);
+	cC = image->getPixel(x0, y3);
+	cD = image->getPixel(x,  y3);
+	cE = image->getPixel(x2, y3);
+	cF = image->getPixel(x3, y3);
+
 	c0 = CubicInterpolate(c0, c5, c6, c7, dx);
 	c8 = CubicInterpolate(c8, c1, c2, c9, dx);
 	cA = CubicInterpolate(cA, c3, c4, cB, dx);
@@ -155,15 +120,16 @@ colorA_t textureImage_t::interpolateImage(const point3d_t &p, bool from_postproc
 	return c0;
 }
 
-colorA_t textureImage_t::getColor(const point3d_t &p, bool from_postprocessed) const
+colorA_t textureImage_t::getColor(const point3d_t &p) const
 {
-	colorA_t ret = getRawColor(p, from_postprocessed);
-	ret.linearRGB_from_ColorSpace(colorSpace, gamma);
+	colorA_t ret = getNoGammaColor(p);
 	
-	return applyAdjustments(ret);
+	if(gamma != 1.f && !image->isHDR()) ret.gammaAdjust(gamma);
+	
+	return ret;
 }
 
-colorA_t textureImage_t::getRawColor(const point3d_t &p, bool from_postprocessed) const
+colorA_t textureImage_t::getNoGammaColor(const point3d_t &p) const
 {
 	point3d_t p1 = point3d_t(p.x, -p.y, p.z);
 	colorA_t ret(0.f);
@@ -172,20 +138,21 @@ colorA_t textureImage_t::getRawColor(const point3d_t &p, bool from_postprocessed
 
 	if(outside) return ret;
 	
-	ret = interpolateImage(p1, from_postprocessed);
+	ret = interpolateImage(p1);
 	
 	return ret;
 }
 
-colorA_t textureImage_t::getColor(int x, int y, int z, bool from_postprocessed) const
+colorA_t textureImage_t::getColor(int x, int y, int z) const
 {
-	colorA_t ret = getRawColor(x, y, z, from_postprocessed);
-	ret.linearRGB_from_ColorSpace(colorSpace, gamma);
+	colorA_t ret = getNoGammaColor(x, y, z);
 	
-	return applyAdjustments(ret);
+	if(gamma != 1.f && !image->isHDR()) ret.gammaAdjust(gamma);
+	
+	return ret;
 }
 
-colorA_t textureImage_t::getRawColor(int x, int y, int z, bool from_postprocessed) const
+colorA_t textureImage_t::getNoGammaColor(int x, int y, int z) const
 {
 	int resx=image->getWidth();
 	int resy=image->getHeight();
@@ -197,31 +164,21 @@ colorA_t textureImage_t::getRawColor(int x, int y, int z, bool from_postprocesse
 
 	colorA_t c1(0.f);
 	
-	if(from_postprocessed && postProcessedImage) return (*postProcessedImage)(x, y);
-	else return image->getPixel(x, y);
+	return image->getPixel(x, y);
 }
 
 bool textureImage_t::doMapping(point3d_t &texpt) const
 {
 	bool outside = false;
-	
 	texpt = 0.5f*texpt + 0.5f;
 	// repeat, only valid for REPEAT clipmode
 	if (tex_clipmode==TCL_REPEAT) {
 		if (xrepeat>1) {
-			texpt.x *= (float)xrepeat;
-			if (mirrorX && int(ceilf(texpt.x)) % 2 == 0)
-			{
-				texpt.x = -texpt.x;
-			}
+			texpt.x *= (PFLOAT)xrepeat;
 			if (texpt.x>1.0) texpt.x -= int(texpt.x); else if (texpt.x<0.0) texpt.x += 1-int(texpt.x);
 		}
 		if (yrepeat>1) {
-			texpt.y *= (float)yrepeat;
-			if (mirrorY && int(ceilf(texpt.y)) % 2 == 0)
-			{
-				texpt.y = -texpt.y;
-			}
+			texpt.y *= (PFLOAT)yrepeat;
 			if (texpt.y>1.0) texpt.y -= int(texpt.y); else if (texpt.y<0.0) texpt.y += 1-int(texpt.y);
 		}
 	}
@@ -285,68 +242,6 @@ void textureImage_t::setCrop(float minx, float miny, float maxx, float maxy)
 	cropy = ((cropminy!=0.0) || (cropmaxy!=1.0));
 }
 
-void textureImage_t::postProcessedCreate()
-{
-	int w=0, h=0, z=0;
-	resolution(w, h, z);
-	
-	postProcessedImage = new rgba2DImage_nw_t(w, h);
-}
-
-void textureImage_t::postProcessedBlur(float blur_factor)
-{
-	if(!postProcessedImage) return;
-	
-	int w=0, h=0, z=0;
-	resolution(w, h, z);
-	
-	cv::Mat A(h, w, CV_32FC4);
-	cv::Mat B(h, w, CV_32FC4);
-	cv::Mat_<cv::Vec4f> _A = A;
-	cv::Mat_<cv::Vec4f> _B = B;
-	
-	for(int y = 0; y < h; y++)
-	{
-		for(int x = 0; x < w; x++)
-		{
-			colorA_t color = image->getPixel(x,y);
-			color.linearRGB_from_ColorSpace(colorSpace, gamma);
-
-			_A(y, x)[0] = color.getR();
-			_A(y, x)[1] = color.getG();
-			_A(y, x)[2] = color.getB();
-			_A(y, x)[3] = color.getA();
-		}
-	}
-
-	int blurSize = (int) ceil(std::min(w,h) * blur_factor);
-	if(blurSize % 2 == 0) blurSize += 1;
-	
-	cv::GaussianBlur(A, B, cv::Size(blurSize,blurSize),0.0); //Important, sizes must be odd!
-
-	for(int y = 0; y < h; y++)
-	{
-		for(int x = 0; x < w; x++)
-		{
-			(*postProcessedImage)(x,y).R = _B(y, x)[0];
-			(*postProcessedImage)(x,y).G = _B(y, x)[1];
-			(*postProcessedImage)(x,y).B = _B(y, x)[2];
-			(*postProcessedImage)(x,y).A = _B(y, x)[3];
-
-			(*postProcessedImage)(x,y).ColorSpace_from_linearRGB(colorSpace, gamma);
-		}
-	}
-
-	for(int i=0; i<w; ++i)
-	{
-		for(int j=0; j<h; ++j)
-		{
-//			(*postProcessedImage)(i,j) = image->getPixel(i,j) * colorA_t(1.f,0.f,0.f,1.f);
-		}
-	}
-
-}
-
 int string2cliptype(const std::string *clipname)
 {
 	// default "repeat"
@@ -361,29 +256,23 @@ int string2cliptype(const std::string *clipname)
 
 texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &render)
 {
-	const std::string *name = nullptr;
-	const std::string *intpstr = nullptr;
+	const std::string *name = NULL;
+	const std::string *intpstr = NULL;
 	double gamma = 1.0;
 	double expadj = 0.0;
 	bool normalmap = false;
-	std::string color_space_string = "Raw_Manual_Gamma";
-	colorSpaces_t color_space = RAW_MANUAL_GAMMA;
-	std::string texture_optimization_string = "none";
-	textureOptimization_t texture_optimization = TEX_OPTIMIZATION_NONE;
-	textureImage_t *tex = nullptr;
-	imageHandler_t *ih = nullptr;
+	textureImage_t *tex = NULL;
+	imageHandler_t *ih = NULL;
 	params.getParam("interpolate", intpstr);
-	params.getParam("color_space", color_space_string);
 	params.getParam("gamma", gamma);
 	params.getParam("exposure_adjust", expadj);
 	params.getParam("normalmap", normalmap);
 	params.getParam("filename", name);
-	params.getParam("texture_optimization", texture_optimization_string);
 	
 	if(!name)
 	{
 		Y_ERROR << "ImageTexture: Required argument filename not found for image texture" << yendl;
-		return nullptr;
+		return NULL;
 	}
 	
 	// interpolation type, bilinear default
@@ -405,7 +294,7 @@ texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &rende
 	if(fmt == "")
 	{
 		Y_ERROR << "ImageTexture: Image extension not recognized, dropping texture." << yendl;
-		return nullptr;
+		return NULL;
 	}
 	
 	paraMap_t ihpm;
@@ -419,45 +308,21 @@ texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &rende
 	if(!ih)
 	{
 		Y_ERROR << "ImageTexture: Couldn't create image handler, dropping texture." << yendl;
-		return nullptr;
+		return NULL;
 	}
 	
-
-	if(ih->isHDR())
-	{
-		if(color_space_string != "LinearRGB") Y_VERBOSE << "ImageTexture: The image is a HDR/EXR file: forcing linear RGB and ignoring selected color space '" << color_space_string <<"' and the gamma setting." << yendl;
-		color_space = LINEAR_RGB;
-		if(texture_optimization_string != "none") Y_VERBOSE << "ImageTexture: The image is a HDR/EXR file: forcing texture optimization to 'none' and ignoring selected texture optimization '" << texture_optimization_string <<"'" << yendl;
-		texture_optimization = TEX_OPTIMIZATION_NONE;
-	}
-	else
-	{
-		if(color_space_string == "sRGB") color_space = SRGB;
-		else if(color_space_string == "XYZ") color_space = XYZ_D65;
-		else if(color_space_string == "LinearRGB") color_space = LINEAR_RGB;
-		else if(color_space_string == "Raw_Manual_Gamma") color_space = RAW_MANUAL_GAMMA;
-		else color_space = SRGB;
-		
-		if(texture_optimization_string == "none") texture_optimization = TEX_OPTIMIZATION_NONE;
-		else if(texture_optimization_string == "optimized") texture_optimization = TEX_OPTIMIZATION_OPTIMIZED;
-		else if(texture_optimization_string == "compressed") texture_optimization = TEX_OPTIMIZATION_COMPRESSED;
-		else texture_optimization = TEX_OPTIMIZATION_NONE;
-	}
-	
-	ih->setTextureOptimization(texture_optimization);
-
 	if(!ih->loadFromFile(*name))
 	{
 		Y_ERROR << "ImageTexture: Couldn't load image file, dropping texture." << yendl;
-		return nullptr;
+		return NULL;
 	}
 	
-	tex = new textureImage_t(ih, intp, gamma, color_space);
+	tex = new textureImage_t(ih, intp, gamma);
 
 	if(!tex)
 	{
 		Y_ERROR << "ImageTexture: Couldn't create image texture." << yendl;
-		return nullptr;
+		return NULL;
 	}
 
 	// setup image
@@ -468,11 +333,6 @@ texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &rende
 	double minx=0.0, miny=0.0, maxx=1.0, maxy=1.0;
 	double cdist=0.0;
 	const std::string *clipmode=0;
-	bool mirror_x = false;
-	bool mirror_y = false;
-	float intensity = 1.f, contrast = 1.f, saturation = 1.f, hue = 0.f, factor_red = 1.f, factor_green = 1.f, factor_blue = 1.f;
-	bool clamp = false;
-	
 	params.getParam("xrepeat", xrep);
 	params.getParam("yrepeat", yrep);
 	params.getParam("cropmin_x", minx);
@@ -486,18 +346,6 @@ texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &rende
 	params.getParam("checker_dist", cdist);
 	params.getParam("use_alpha", use_alpha);
 	params.getParam("calc_alpha", calc_alpha);
-	params.getParam("mirror_x", mirror_x);
-	params.getParam("mirror_y", mirror_y);
-	
-	params.getParam("adj_mult_factor_red", factor_red);
-	params.getParam("adj_mult_factor_green", factor_green);
-	params.getParam("adj_mult_factor_blue", factor_blue);
-	params.getParam("adj_intensity", intensity);
-	params.getParam("adj_contrast", contrast);
-	params.getParam("adj_saturation", saturation);
-	params.getParam("adj_hue", hue);
-	params.getParam("adj_clamp", clamp);
-	
 	tex->xrepeat = xrep;
 	tex->yrepeat = yrep;
 	tex->rot90 = rot90;
@@ -509,10 +357,6 @@ texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &rende
 	tex->checker_even = even_tiles;
 	tex->checker_odd = odd_tiles;
 	tex->checker_dist = cdist;
-	tex->mirrorX = mirror_x;
-	tex->mirrorY = mirror_y;
-	
-	tex->setAdjustments(intensity, contrast, saturation, hue, clamp, factor_red, factor_green, factor_blue);
 	
 	return tex;
 }

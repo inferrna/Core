@@ -41,7 +41,7 @@ public:
 	~pngDataReader_t()
 	{
 		delete [] data;
-		data = nullptr;
+		data = NULL;
 	}
 
 	size_t read(yByte* buf, size_t s)
@@ -67,7 +67,7 @@ void readFromMem(png_structp pngPtr, png_bytep buffer, png_size_t bytesToRead)
 {
    pngDataReader_t *img = (pngDataReader_t*) png_get_io_ptr(pngPtr);
 
-   if(img == nullptr) png_error(pngPtr, "The image data pointer is null!!");
+   if(img == NULL) png_error(pngPtr, "The image data pointer is null!!");
 
    if(img->read((yByte*)buffer, (size_t)bytesToRead) < bytesToRead) png_warning(pngPtr, "EOF Found while reading image data");
 }

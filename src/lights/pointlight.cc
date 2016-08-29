@@ -28,7 +28,7 @@ __BEGIN_YAFRAY
 class pointLight_t : public light_t
 {
   public:
-	pointLight_t(const point3d_t &pos, const color_t &col, float inte, bool bLightEnabled=true, bool bCastShadows=true);
+	pointLight_t(const point3d_t &pos, const color_t &col, CFLOAT inte);
 	virtual color_t totalEnergy() const { return color * 4.0f * M_PI; }
 	virtual color_t emitPhoton(float s1, float s2, float s3, float s4, ray_t &ray, float &ipdf) const;
 	virtual color_t emitSample(vector3d_t &wo, lSample_t &s) const;
@@ -41,25 +41,22 @@ class pointLight_t : public light_t
 	point3d_t position;
 	color_t color;
 	float intensity;
+	
 };
 
-pointLight_t::pointLight_t(const point3d_t &pos, const color_t &col, float inte, bool bLightEnabled, bool bCastShadows):
+pointLight_t::pointLight_t(const point3d_t &pos, const color_t &col, CFLOAT inte):
 	light_t(LIGHT_SINGULAR), position(pos)
 {
-	lLightEnabled = bLightEnabled;
-    lCastShadows = bCastShadows;
-    color = col * inte;
+	color = col * inte;
 	intensity = color.energy();
 }
 
 bool pointLight_t::illuminate(const surfacePoint_t &sp, color_t &col, ray_t &wi) const
-{	
-	if( photonOnly() ) return false;
-	
+{
 	vector3d_t ldir(position - sp.P);
-	float dist_sqr = ldir.x*ldir.x + ldir.y*ldir.y + ldir.z*ldir.z;
-	float dist = fSqrt(dist_sqr);
-	float idist_sqr = 0.0;
+	PFLOAT dist_sqr = ldir.x*ldir.x + ldir.y*ldir.y + ldir.z*ldir.z;
+	PFLOAT dist = fSqrt(dist_sqr);
+	PFLOAT idist_sqr = 0.0;
 	if(dist == 0.0) return false;
 	
 	idist_sqr = 1.f/(dist_sqr);
@@ -68,18 +65,16 @@ bool pointLight_t::illuminate(const surfacePoint_t &sp, color_t &col, ray_t &wi)
 	wi.tmax = dist;
 	wi.dir = ldir;
 	
-	col = color * (float)idist_sqr;
+	col = color * (CFLOAT)idist_sqr;
 	return true;
 }
 
 bool pointLight_t::illumSample(const surfacePoint_t &sp, lSample_t &s, ray_t &wi) const
 {
-	if( photonOnly() ) return false;
-	
 	// bleh...
 	vector3d_t ldir(position - sp.P);
-	float dist_sqr = ldir.x*ldir.x + ldir.y*ldir.y + ldir.z*ldir.z;
-	float dist = fSqrt(dist_sqr);
+	PFLOAT dist_sqr = ldir.x*ldir.x + ldir.y*ldir.y + ldir.z*ldir.z;
+	PFLOAT dist = fSqrt(dist_sqr);
 	if(dist == 0.0) return false;
 	
 	ldir *= 1.f/dist;
@@ -122,30 +117,13 @@ light_t *pointLight_t::factory(paraMap_t &params,renderEnvironment_t &render)
 {
 	point3d_t from(0.0);
 	color_t color(1.0);
-	float power = 1.0;
-	bool lightEnabled = true;
-	bool castShadows = true;
-	bool shootD = true;
-	bool shootC = true;
-	bool pOnly = false;
+	CFLOAT power = 1.0;
 
 	params.getParam("from",from);
 	params.getParam("color",color);
 	params.getParam("power",power);
-	params.getParam("light_enabled", lightEnabled);
-	params.getParam("cast_shadows", castShadows);
-	params.getParam("with_caustic", shootC);
-	params.getParam("with_diffuse", shootD);
-	params.getParam("photon_only",pOnly);
-	
 
-	pointLight_t *light = new pointLight_t(from, color, power, lightEnabled, castShadows);
-
-	light->lShootCaustic = shootC;
-	light->lShootDiffuse = shootD;
-	light->lPhotonOnly = pOnly;
-
-	return light;
+	return new pointLight_t(from, color, power);
 }
 
 extern "C"

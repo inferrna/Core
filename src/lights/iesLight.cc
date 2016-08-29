@@ -167,7 +167,7 @@ bool iesLight_t::canIntersect() const
     return false;
 }
 
-bool iesLight_t::intersect(const ray_t &ray, float &t, color_t &col, float &ipdf) const
+bool iesLight_t::intersect(const ray_t &ray, PFLOAT &t, color_t &col, float &ipdf) const
 {
     return false;
 }

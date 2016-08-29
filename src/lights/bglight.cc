@@ -52,23 +52,17 @@ inline float sinSample(float s)
 	return fSin(s * M_PI);
 }
 
-bgLight_t::bgLight_t(int sampl, bool absIntersect, bool bLightEnabled, bool bCastShadows):
-light_t(LIGHT_NONE), samples(sampl), absInter(absIntersect)
+bgLight_t::bgLight_t(int sampl, bool shootC, bool shootD, bool absIntersect):
+light_t(LIGHT_NONE), samples(sampl), shootCaustic(shootC), shootDiffuse(shootD), absInter(absIntersect)
 {
-    lLightEnabled = bLightEnabled;
-    lCastShadows = bCastShadows;
-	background = nullptr;
-	uDist = nullptr;
-	vDist = nullptr;
+	background = NULL;
 }
 
 bgLight_t::~bgLight_t()
 {
 	for(int i = 0; i < vDist->count; i++) delete uDist[i];
-	if(uDist) delete[] uDist;
-	uDist = nullptr;
-	if(vDist) delete vDist;
-	vDist = nullptr;
+	delete[] uDist;
+	delete vDist;
 }
 
 void bgLight_t::init(scene_t &scene)
@@ -102,7 +96,7 @@ void bgLight_t::init(scene_t &scene)
 			
 			invSpheremap(fx, fy, ray.dir);
 			
-			fu[x] = background->eval(ray, true).energy() * sintheta;
+			fu[x] = background->eval(ray).energy() * sintheta;
 		}
 		
 		uDist[y] = new pdf1D_t(fu, nu);
@@ -180,8 +174,6 @@ float bgLight_t::dir_pdf(const vector3d_t dir) const
 
 bool bgLight_t::illumSample(const surfacePoint_t &sp, lSample_t &s, ray_t &wi) const
 {
-	if( photonOnly() ) return false;
-	
 	float u = 0.f, v = 0.f;
 	vector3d_t U, V;
 	
@@ -191,7 +183,7 @@ bool bgLight_t::illumSample(const surfacePoint_t &sp, lSample_t &s, ray_t &wi) c
 	
 	invSpheremap(u, v, wi.dir);
 
-	s.col = background->eval(wi, true);
+	s.col = background->eval(wi);
 
 	return true;
 }
@@ -208,16 +200,14 @@ bool bgLight_t::intersect(const ray_t &ray, float &t, color_t &col, float &ipdf)
 
 	invSpheremap(u, v, tr.dir);
 
-	col = background->eval(tr, true);
-	
-	col.clampProportionalRGB(lClampIntersect); //trick to reduce light sampling noise at the expense of realism and inexact overall light. 0.f disables clamping
+	col = background->eval(tr);
 
 	return true;
 }
 
 color_t bgLight_t::totalEnergy() const
 {
-	color_t energy = background->eval(ray_t(point3d_t(0,0,0), vector3d_t(0.5, 0.5, 0.5)), true) * worldPIFactor;
+	color_t energy = background->eval(ray_t(point3d_t(0,0,0), vector3d_t(0.5, 0.5, 0.5))) * worldPIFactor;
 	return energy;
 }
 
@@ -230,7 +220,7 @@ color_t bgLight_t::emitPhoton(float s1, float s2, float s3, float s4, ray_t &ray
 	
 	sample_dir(s3, s4, ray.dir, ipdf, true);
 
-	pcol = background->eval(ray, true);
+	pcol = background->eval(ray);
 	ray.dir = -ray.dir;
 	
 	createCS(ray.dir, U, V);
@@ -252,7 +242,7 @@ color_t bgLight_t::emitSample(vector3d_t &wo, lSample_t &s) const
 	
 	sample_dir(s.s1, s.s2, wo, s.dirPdf, true);
 	
-	pcol = background->eval(ray_t(point3d_t(0,0,0), wo), true);
+	pcol = background->eval(ray_t(point3d_t(0,0,0), wo));
 	wo = -wo;
 	
 	createCS(wo, U, V);
@@ -290,23 +280,13 @@ light_t* bgLight_t::factory(paraMap_t &params, renderEnvironment_t &render)
 	bool shootD = true;
 	bool shootC = true;
 	bool absInt = false;
-    bool lightEnabled = true;
-	bool castShadows = true;
-	bool pOnly = false;
 	
 	params.getParam("samples", samples);
-	params.getParam("with_caustic", shootC);
-	params.getParam("with_diffuse", shootD);
+	params.getParam("shoot_caustics", shootC);
+	params.getParam("shoot_diffuse", shootD);
 	params.getParam("abs_intersect", absInt);
-    params.getParam("light_enabled", lightEnabled);
-	params.getParam("cast_shadows", castShadows);
-	params.getParam("photon_only",pOnly);
 
-	bgLight_t *light = new bgLight_t(samples, absInt, lightEnabled, castShadows);
-	
-	light->lShootCaustic = shootC;
-	light->lShootDiffuse = shootD;
-	light->lPhotonOnly = pOnly;
+	bgLight_t *light = new bgLight_t(samples, shootC, shootD, absInt);
 
 	return light;
 }

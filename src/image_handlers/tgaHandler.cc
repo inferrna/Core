@@ -23,11 +23,10 @@
 #include <core_api/environment.h>
 #include <core_api/imagehandler.h>
 #include <core_api/params.h>
-#include <core_api/scene.h>
-#include <utilities/math_utils.h>
-#include <utilities/fileUtils.h>
 
 #include "tgaUtils.h"
+
+#include <cstdio>
 
 __BEGIN_YAFRAY
 
@@ -39,13 +38,13 @@ class tgaHandler_t: public imageHandler_t
 {
 public:
 	tgaHandler_t();
-	void initForOutput(int width, int height, const renderPasses_t *renderPasses, bool denoiseEnabled, int denoiseHLum, int denoiseHCol, float denoiseMix, bool withAlpha = false, bool multi_layer = false);
+	void initForOutput(int width, int height, bool withAlpha = false, bool withDepth = false);
 	void initForInput();
 	~tgaHandler_t();
 	bool loadFromFile(const std::string &name);
-	bool saveToFile(const std::string &name, int imagePassNumber = 0);
-	void putPixel(int x, int y, const colorA_t &rgba, int imagePassNumber = 0);
-	colorA_t getPixel(int x, int y, int imagePassNumber = 0);
+	bool saveToFile(const std::string &name);
+	void putPixel(int x, int y, const colorA_t &rgba, float depth = 0.f);
+	colorA_t getPixel(int x, int y);
 	static imageHandler_t *factory(paraMap_t &params, renderEnvironment_t &render);
 
 private:
@@ -78,63 +77,41 @@ tgaHandler_t::tgaHandler_t()
 	m_width = 0;
 	m_height = 0;
 	m_hasAlpha = false;
-	m_MultiLayer = false;
+	m_hasDepth = false;
+	
+	m_rgba = NULL;
+	m_depth = NULL;
 	
 	handlerName = "TGAHandler";
-
-	rgbOptimizedBuffer = nullptr;
-	rgbCompressedBuffer = nullptr;
-	rgbaOptimizedBuffer = nullptr;
-	rgbaCompressedBuffer = nullptr;
 }
 
-void tgaHandler_t::initForOutput(int width, int height, const renderPasses_t *renderPasses, bool denoiseEnabled, int denoiseHLum, int denoiseHCol, float denoiseMix, bool withAlpha, bool multi_layer)
+void tgaHandler_t::initForOutput(int width, int height, bool withAlpha, bool withDepth)
 {
 	m_width = width;
 	m_height = height;
 	m_hasAlpha = withAlpha;
-    m_MultiLayer = multi_layer;
-	m_Denoise = denoiseEnabled;
-	m_DenoiseHLum = denoiseHLum;
-	m_DenoiseHCol = denoiseHCol;
-	m_DenoiseMix = denoiseMix;
+	m_hasDepth = withDepth;
 	
-	imagePasses.resize(renderPasses->extPassesSize());
+	m_rgba = new rgba2DImage_nw_t(m_width, m_height);
 	
-	for(size_t idx = 0; idx < imagePasses.size(); ++idx)
+	if(m_hasDepth)
 	{
-		imagePasses.at(idx) = new rgba2DImage_nw_t(m_width, m_height);
+		m_depth = new gray2DImage_nw_t(m_width, m_height);
 	}
 }
 
 tgaHandler_t::~tgaHandler_t()
 {
-	if(!imagePasses.empty())
-	{
-		for(size_t idx = 0; idx < imagePasses.size(); ++idx)
-		{
-			if(imagePasses.at(idx)) delete imagePasses.at(idx);
-			imagePasses.at(idx) = nullptr;
-		}
-	}
+	if(m_rgba) delete m_rgba;
+	if(m_depth) delete m_depth;
+	m_rgba = NULL;
+	m_depth = NULL;
 
-	if(rgbOptimizedBuffer) delete rgbOptimizedBuffer;
-	if(rgbCompressedBuffer) delete rgbCompressedBuffer;
-	if(rgbaOptimizedBuffer) delete rgbaOptimizedBuffer;
-	if(rgbaCompressedBuffer) delete rgbaCompressedBuffer;
-
-	rgbOptimizedBuffer = nullptr;
-	rgbCompressedBuffer = nullptr;
-	rgbaOptimizedBuffer = nullptr;
-	rgbaCompressedBuffer = nullptr;	
 }
 
-bool tgaHandler_t::saveToFile(const std::string &name, int imagePassNumber)
+bool tgaHandler_t::saveToFile(const std::string &name)
 {
-	std::string nameWithoutTmp = name;
-	nameWithoutTmp.erase(nameWithoutTmp.length()-4);
-	if(session.renderInProgress()) Y_INFO << handlerName << ": Autosaving partial render (" << RoundFloatPrecision(session.currentPassPercent(), 0.01) << "% of pass " << session.currentPass() << " of " << session.totalPasses() << ") " << ((m_hasAlpha) ? "RGBA" : "RGB" ) << " file as \"" << nameWithoutTmp << "\"...  " << getDenoiseParams() << yendl;
-	else Y_INFO << handlerName << ": Saving " << ((m_hasAlpha) ? "RGBA" : "RGB" ) << " file as \"" << nameWithoutTmp << "\"...  " << getDenoiseParams() << yendl;
+	Y_INFO << handlerName << ": Saving " << ((m_hasAlpha) ? "RGBA" : "RGB" ) << " file as \"" << name << "\"..." << yendl;
 
 	std::string imageId = "Image rendered with YafaRay";
 	tgaHeader_t header;
@@ -146,106 +123,92 @@ bool tgaHandler_t::saveToFile(const std::string &name, int imagePassNumber)
 	header.height = m_height;
 	header.bitDepth = ((m_hasAlpha) ? 32 : 24 );
 	header.desc = TL | ((m_hasAlpha) ? alpha8 : noAlpha );
-		
-	FILE * fp = fileUnicodeOpen(name, "wb");
+	
+	FILE* fp;
+	
+	fp = fopen(name.c_str(), "wb");
 
-	if (fp == nullptr)
+	if (fp == NULL)
 		return false;
 	else 
 	{
 		fwrite(&header, sizeof(tgaHeader_t), 1, fp);
 		fwrite(imageId.c_str(), (size_t)header.idLength, 1, fp);
-
-		if(m_Denoise)
+		
+		for (int y = 0; y < m_height; y++) 
 		{
-			cv::Mat A(m_height, m_width, CV_8UC3);
-			cv::Mat B(m_height, m_width, CV_8UC3);
-			cv::Mat_<cv::Vec3b> _A = A;
-			cv::Mat_<cv::Vec3b> _B = B;
-
-			for (int y = 0; y < m_height; y++) 
+			for (int x = 0; x < m_width; x++) 
 			{
-				for (int x = 0; x < m_width; x++) 
+				(*m_rgba)(x, y).clampRGBA01();
+				if(!m_hasAlpha)
 				{
-				colorA_t &col = (*imagePasses.at(imagePassNumber))(x, y);
-				col.clampRGBA01();
-				_A(y, x)[0] = (col.getR() * 255);
-				_A(y, x)[1] = (col.getG() * 255);
-				_A(y, x)[2] = (col.getB() * 255);
+					tgaPixelRGB_t rgb;
+					rgb = (color_t)(*m_rgba)(x, y);
+					fwrite(&rgb, sizeof(tgaPixelRGB_t), 1, fp);
 				}
-			}
-
-			cv::fastNlMeansDenoisingColored(A, B, m_DenoiseHLum, m_DenoiseHCol, 7, 21);
-
-			for (int y = 0; y < m_height; y++) 
-			{
-				for (int x = 0; x < m_width; x++) 
+				else
 				{
-					if(!m_hasAlpha)
-					{
-						tgaPixelRGB_t rgb;
-						rgb.R = (yByte) (m_DenoiseMix * _B(y, x)[0] + (1.f-m_DenoiseMix) * _A(y, x)[0]);
-						rgb.G = (yByte) (m_DenoiseMix * _B(y, x)[1] + (1.f-m_DenoiseMix) * _A(y, x)[1]);
-						rgb.B = (yByte) (m_DenoiseMix * _B(y, x)[2] + (1.f-m_DenoiseMix) * _A(y, x)[2]);
-						fwrite(&rgb, sizeof(tgaPixelRGB_t), 1, fp);
-					}
-					else
-					{
-						colorA_t &col = (*imagePasses.at(imagePassNumber))(x, y);
-						tgaPixelRGBA_t rgba;
-						rgba.R = (yByte) (m_DenoiseMix * _B(y, x)[0] + (1.f-m_DenoiseMix) * _A(y, x)[0]);
-						rgba.G = (yByte) (m_DenoiseMix * _B(y, x)[1] + (1.f-m_DenoiseMix) * _A(y, x)[1]);
-						rgba.B = (yByte) (m_DenoiseMix * _B(y, x)[2] + (1.f-m_DenoiseMix) * _A(y, x)[2]);
-						rgba.A = (*imagePasses.at(imagePassNumber))(x, y).A;
-						fwrite(&rgba, sizeof(tgaPixelRGBA_t), 1, fp);
-					}
+					tgaPixelRGBA_t rgba;
+					rgba = (*m_rgba)(x, y);
+					fwrite(&rgba, sizeof(tgaPixelRGBA_t), 1, fp);
 				}
 			}
 		}
-		else
-		{
-			for (int y = 0; y < m_height; y++) 
-			{
-				for (int x = 0; x < m_width; x++) 
-				{
-					(*imagePasses.at(imagePassNumber))(x, y).clampRGBA01();
-					if(!m_hasAlpha)
-					{
-						tgaPixelRGB_t rgb;
-						rgb = (color_t)(*imagePasses.at(imagePassNumber))(x, y);
-						fwrite(&rgb, sizeof(tgaPixelRGB_t), 1, fp);
-					}
-					else
-					{
-						tgaPixelRGBA_t rgba;
-						rgba = (*imagePasses.at(imagePassNumber))(x, y);
-						fwrite(&rgba, sizeof(tgaPixelRGBA_t), 1, fp);
-					}
-				}
-			}
-		}
+
 		fwrite(&footer, sizeof(tgaFooter_t), 1, fp);
-		fileUnicodeClose(fp);
+		fclose(fp);
 	}
 	
-	Y_VERBOSE << handlerName << ": Done." << yendl;
+	if(m_hasDepth)
+	{
+		std::string depthName = name.substr(0, name.size() - 4) + "_zbuffer.tga";
+		
+		Y_INFO << handlerName << ": Saving Z-Buffer as \"" << depthName << "\"..." << yendl;
+		
+		header.idLength = imageId.size();
+		header.imageType = uncGray;
+		header.width = m_width;
+		header.height = m_height;
+		header.bitDepth = 8;
+		header.desc = TL | noAlpha;
+		
+		fp = fopen(depthName.c_str(), "wb");
+
+		if (fp == NULL)
+			return false;
+		else 
+		{
+			fwrite(&header, sizeof(tgaHeader_t), 1, fp);
+			fwrite(imageId.c_str(), (size_t)header.idLength, 1, fp);
+			for (int y = 0; y < m_height; y++) 
+			{
+				for (int x = 0; x < m_width; x++) 
+				{
+					yByte depth = (yByte)(std::max(0.f, std::min(1.f, (*m_depth)(x, y))) * 255.f);
+					fwrite(&depth, sizeof(yByte), 1, fp);
+				}
+			}
+
+			fwrite(&footer, sizeof(tgaFooter_t), 1, fp);
+			fclose(fp);
+		}
+			
+	}
+	
+	Y_INFO << handlerName << ": Done." << yendl;
 	
 	return true;
 }
 
-void tgaHandler_t::putPixel(int x, int y, const colorA_t &rgba, int imagePassNumber)
+void tgaHandler_t::putPixel(int x, int y, const colorA_t &rgba, float depth)
 {
-	(*imagePasses.at(imagePassNumber))(x, y) = rgba;
+	(*m_rgba)(x, y) = rgba;
+	if(m_hasDepth) (*m_depth)(x, y) = depth;
 }
 
-colorA_t tgaHandler_t::getPixel(int x, int y, int imagePassNumber)
+colorA_t tgaHandler_t::getPixel(int x, int y)
 {
-	if(rgbOptimizedBuffer) return (*rgbOptimizedBuffer)(x, y).getColor();
-	else if(rgbCompressedBuffer) return (*rgbCompressedBuffer)(x, y).getColor();
-	else if(rgbaOptimizedBuffer) return (*rgbaOptimizedBuffer)(x, y).getColor();
-	else if(rgbaCompressedBuffer) return (*rgbaCompressedBuffer)(x, y).getColor();
-	else if(!imagePasses.empty() && imagePasses.at(0)) return (*imagePasses.at(0))(x, y);
-	else return colorA_t(0.f);	//This should not happen, but just in case
+	return (*m_rgba)(x, y);
 }
 
 template <class ColorType> void tgaHandler_t::readColorMap(FILE *fp, tgaHeader_t &header, colorProcessor cp)
@@ -283,12 +246,8 @@ template <class ColorType> void tgaHandler_t::readRLEImage(FILE *fp, colorProces
 		{
 			if(!rlePack)  fread(&color, sizeof(ColorType), 1, fp);
 
-			if(rgbaOptimizedBuffer) (*rgbaOptimizedBuffer)(x, y).setColor((this->*cp)(&color));
-			else if(rgbaCompressedBuffer) (*rgbaCompressedBuffer)(x, y).setColor((this->*cp)(&color));
-			else if(rgbOptimizedBuffer) (*rgbOptimizedBuffer)(x, y).setColor((this->*cp)(&color));
-			else if(rgbCompressedBuffer) (*rgbCompressedBuffer)(x, y).setColor((this->*cp)(&color));
-			else (*imagePasses.at(0))(x, y) = (this->*cp)(&color);			
-
+			(*m_rgba)(x, y) = (this->*cp)(&color);
+					  
 			x += stepX;
 
 			if(x == maxX)
@@ -312,12 +271,7 @@ template <class ColorType> void tgaHandler_t::readDirectImage(FILE *fp, colorPro
 	{
 		for(size_t x = minX; x != maxX; x += stepX)
 		{
-			if(rgbaOptimizedBuffer) (*rgbaOptimizedBuffer)(x, y).setColor((this->*cp)(&color[i]));
-			else if(rgbaCompressedBuffer) (*rgbaCompressedBuffer)(x, y).setColor((this->*cp)(&color[i]));
-			else if(rgbOptimizedBuffer) (*rgbOptimizedBuffer)(x, y).setColor((this->*cp)(&color[i]));
-			else if(rgbCompressedBuffer) (*rgbCompressedBuffer)(x, y).setColor((this->*cp)(&color[i]));
-			else if(!imagePasses.empty() && imagePasses.at(0)) (*imagePasses.at(0))(x, y) = (this->*cp)(&color[i]);			
-
+			(*m_rgba)(x, y) = (this->*cp)(&color[i]);
 			i++;
 		}
 	}
@@ -478,10 +432,9 @@ bool tgaHandler_t::precheckFile(tgaHeader_t &header, const std::string &name, bo
 
 bool tgaHandler_t::loadFromFile(const std::string &name)
 {
-	FILE *fp = fileUnicodeOpen(name, "rb");
-
 	Y_INFO << handlerName << ": Loading image \"" << name << "\"..." << yendl;
-	
+
+	FILE *fp = fopen(name.c_str(), "rb");
 	if(!fp)
 	{
 		Y_ERROR << handlerName << ": Cannot open file " << name << yendl;
@@ -499,6 +452,7 @@ bool tgaHandler_t::loadFromFile(const std::string &name)
 	m_width = header.width;
 	m_height = header.height;
 	m_hasAlpha = (alphaBitDepth != 0 || header.cmEntryBitDepth == 32);
+	m_hasDepth = false;
 
 	bool isRLE = false;
 	bool hasColorMap = false;
@@ -508,37 +462,17 @@ bool tgaHandler_t::loadFromFile(const std::string &name)
 	
 	if(!precheckFile(header, name, isGray, isRLE, hasColorMap, alphaBitDepth))
 	{
-		fileUnicodeClose(fp);
+		fclose(fp);
 		return false;
 	}
 
 	// Jump over any image Id
 	fseek(fp, header.idLength, SEEK_CUR);
 	
-	if(!imagePasses.empty())
-	{
-		for(size_t idx = 0; idx < imagePasses.size(); ++idx)
-		{
-			if(imagePasses.at(idx)) delete imagePasses.at(idx);
-		}
-		imagePasses.clear();
-	}
-
-	if(getTextureOptimization() == TEX_OPTIMIZATION_OPTIMIZED)
-	{
-		if(header.cmEntryBitDepth == 16 || header.cmEntryBitDepth == 32 || header.bitDepth == 16 || header.bitDepth == 32) rgbaOptimizedBuffer = new rgbaOptimizedImage_nw_t(m_width, m_height);
-		else rgbOptimizedBuffer = new rgbOptimizedImage_nw_t(m_width, m_height);
-	}
+	if(m_rgba) delete m_rgba;
+	m_rgba = new rgba2DImage_nw_t(m_width, m_height);
 	
-	else if(getTextureOptimization() == TEX_OPTIMIZATION_COMPRESSED)
-	{
-		if(header.cmEntryBitDepth == 16 || header.cmEntryBitDepth == 32 || header.bitDepth == 16 || header.bitDepth == 32) rgbaCompressedBuffer = new rgbaCompressedImage_nw_t(m_width, m_height);
-		else rgbCompressedBuffer = new rgbCompressedImage_nw_t(m_width, m_height);
-	}
-
-	else imagePasses.push_back(new rgba2DImage_nw_t(m_width, m_height));
-		
-	ColorMap = nullptr;
+	ColorMap = NULL;
 	
 	// Read the colormap if needed
 	if(hasColorMap)
@@ -648,13 +582,13 @@ bool tgaHandler_t::loadFromFile(const std::string &name)
 		}
 	}
 	
-	fileUnicodeClose(fp);
-	fp = nullptr;
+	fclose(fp);
+	fp = NULL;
 	
 	if (ColorMap) delete ColorMap;
-	ColorMap = nullptr;
+	ColorMap = NULL;
 
-	Y_VERBOSE << handlerName << ": Done." << yendl;
+	Y_INFO << handlerName << ": Done." << yendl;
 
 	return true;
 }
@@ -664,28 +598,18 @@ imageHandler_t *tgaHandler_t::factory(paraMap_t &params,renderEnvironment_t &ren
 	int width = 0;
 	int height = 0;
 	bool withAlpha = false;
+	bool withDepth = false;
 	bool forOutput = true;
-	bool denoiseEnabled = false;
-	int denoiseHLum = 3;
-	int denoiseHCol = 3;
-	float denoiseMix = 0.8f;
 
 	params.getParam("width", width);
 	params.getParam("height", height);
 	params.getParam("alpha_channel", withAlpha);
+	params.getParam("z_channel", withDepth);
 	params.getParam("for_output", forOutput);
-	params.getParam("denoiseEnabled", denoiseEnabled);
-	params.getParam("denoiseHLum", denoiseHLum);
-	params.getParam("denoiseHCol", denoiseHCol);
-	params.getParam("denoiseMix", denoiseMix);
-
+	
 	imageHandler_t *ih = new tgaHandler_t();
 	
-	if(forOutput)
-	{
-		if(yafLog.getUseParamsBadge()) height += yafLog.getBadgeHeight();
-		ih->initForOutput(width, height, render.getRenderPasses(), denoiseEnabled, denoiseHLum, denoiseHCol, denoiseMix, withAlpha, false);
-	}
+	if(forOutput) ih->initForOutput(width, height, withAlpha, withDepth);
 	
 	return ih;
 }

@@ -34,9 +34,9 @@ class YAFRAYCORE_EXPORT sNodeFinder_t: public nodeFinder_t
 
 const shaderNode_t* sNodeFinder_t::operator()(const std::string &name) const
 {
-	auto i=node_table.find(name);
+	std::map<std::string,shaderNode_t *>::const_iterator i=node_table.find(name);
 	if(i!=node_table.end()) return i->second;
-	else return nullptr;
+	else return NULL;
 }
 
 void recursiveSolver(shaderNode_t *node, std::vector<shaderNode_t*> &sorted)
@@ -46,7 +46,7 @@ void recursiveSolver(shaderNode_t *node, std::vector<shaderNode_t*> &sorted)
 	std::vector<const shaderNode_t*> deps;
 	if(node->getDependencies(deps))
 	{
-		for(auto i=deps.begin(); i!=deps.end(); ++i)
+		for(std::vector<const shaderNode_t*>::iterator i=deps.begin(); i!=deps.end(); ++i)
 			// someone tell me a smarter way than casting away a const...
 			if( (*i)->ID==0 ) recursiveSolver((shaderNode_t *)*i, sorted);
 	}
@@ -58,7 +58,7 @@ void recursiveFinder(const shaderNode_t *node, std::set<const shaderNode_t*> &tr
 	std::vector<const shaderNode_t*> deps;
 	if(node->getDependencies(deps))
 	{
-		for(auto i=deps.begin(); i!=deps.end(); ++i)
+		for(std::vector<const shaderNode_t*>::iterator i=deps.begin(); i!=deps.end(); ++i)
 		{
 			tree.insert(*i);
 			recursiveFinder(*i, tree);
@@ -70,7 +70,7 @@ void recursiveFinder(const shaderNode_t *node, std::set<const shaderNode_t*> &tr
 nodeMaterial_t::~nodeMaterial_t()
 {
 	//clear nodes map:
-	for(auto i=mShadersTable.begin(); i!=mShadersTable.end(); ++i) delete i->second;
+	for(std::map<std::string,shaderNode_t *>::iterator i=mShadersTable.begin(); i!=mShadersTable.end(); ++i) delete i->second;
 	mShadersTable.clear();
 }
 
@@ -104,10 +104,10 @@ void nodeMaterial_t::getNodeList(const shaderNode_t *root, std::vector<shaderNod
 	std::set<const shaderNode_t *> inTree;
 	for(unsigned int i=0; i<nodes.size(); ++i) inTree.insert(nodes[i]);
 	recursiveFinder(root, inTree);
-	auto send=inTree.end();
-	auto end=allSorted.end();
+	std::set<const shaderNode_t *>::iterator send=inTree.end();
+	std::vector<shaderNode_t *>::iterator i, end=allSorted.end();
 	nodes.clear();
-	for(auto i=allSorted.begin(); i!=end; ++i) if(inTree.find(*i)!=send) nodes.push_back(*i);
+	for(i=allSorted.begin(); i!=end; ++i) if(inTree.find(*i)!=send) nodes.push_back(*i);
 }
 
 void nodeMaterial_t::filterNodes(const std::vector<shaderNode_t *> &input, std::vector<shaderNode_t *> &output, int flags)
@@ -122,9 +122,9 @@ void nodeMaterial_t::filterNodes(const std::vector<shaderNode_t *> &input, std::
 
 void nodeMaterial_t::evalBump(nodeStack_t &stack, const renderState_t &state, surfacePoint_t &sp, const shaderNode_t *bumpS)const
 {
-	auto end=bumpNodes.end();
-	for(auto iter = bumpNodes.begin(); iter!=end; ++iter) (*iter)->evalDerivative(stack, state, sp);
-	float du, dv;
+	std::vector<shaderNode_t *>::const_iterator iter, end=bumpNodes.end();
+	for(iter = bumpNodes.begin(); iter!=end; ++iter) (*iter)->evalDerivative(stack, state, sp);
+	CFLOAT du, dv;
 	bumpS->getDerivative(stack, du, dv);
 	applyBump(sp, du, dv);
 }
@@ -185,7 +185,7 @@ bool nodeMaterial_t::loadNodes(const std::list<paraMap_t> &paramsList, renderEnv
 		{
 			mShadersTable[*name] = shader;
 			allNodes.push_back(shader);
-			Y_VERBOSE << "NodeMaterial: Added ShaderNode '"<<*name<<"'! ("<<(void*)shader<<")" << yendl;
+			Y_INFO << "NodeMaterial: Added ShaderNode '"<<*name<<"'! ("<<(void*)shader<<")" << yendl;
 		}
 		else
 		{
@@ -212,7 +212,7 @@ bool nodeMaterial_t::loadNodes(const std::list<paraMap_t> &paramsList, renderEnv
 	if(error)
 	{
 		//clear nodes map:
-		for(auto i=mShadersTable.begin();i!=mShadersTable.end();++i) delete i->second;
+		for(std::map<std::string,shaderNode_t *>::iterator i=mShadersTable.begin();i!=mShadersTable.end();++i) delete i->second;
 		mShadersTable.clear();
 	}
 
@@ -222,8 +222,9 @@ bool nodeMaterial_t::loadNodes(const std::list<paraMap_t> &paramsList, renderEnv
 void nodeMaterial_t::parseNodes(const paraMap_t &params, std::vector<shaderNode_t *> &roots, std::map<std::string, shaderNode_t *> &nodeList)
 {
     const std::string *name=0;
+    std::map<std::string, shaderNode_t *>::iterator currentNode;
 
-    for(auto currentNode = nodeList.begin(); currentNode != nodeList.end(); ++currentNode)
+    for(currentNode = nodeList.begin(); currentNode != nodeList.end(); ++currentNode)
     {
         if(params.getParam(currentNode->first, name))
         {

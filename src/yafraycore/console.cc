@@ -16,32 +16,16 @@
 */
 
 #include <yafraycore/monitor.h>
-#include <utilities/math_utils.h>
 #include <iostream>
 #include <string>
 #include <iomanip>
-#ifdef _MSC_VER
-#include <algorithm>
-#endif
 
 __BEGIN_YAFRAY
 
 #define printBar(progEmpty, progFull, per) \
-std::cout << "\r"; \
-if(yafLog.getConsoleLogColorsEnabled()) std::cout << setColor(Green); \
-std::cout << "Progress: "; \
-if(yafLog.getConsoleLogColorsEnabled()) std::cout << setColor(Red, true); \
-std::cout << "["; \
-if(yafLog.getConsoleLogColorsEnabled()) std::cout << setColor(Green, true); \
-std::cout << std::string(progFull, '#') << std::string(progEmpty, ' '); \
-if(yafLog.getConsoleLogColorsEnabled()) std::cout << setColor(Red, true); \
-std::cout << "] "; \
-if(yafLog.getConsoleLogColorsEnabled()) std::cout << setColor(); \
-std::cout << "("; \
-if(yafLog.getConsoleLogColorsEnabled()) std::cout << setColor(Yellow, true); \
-std::cout << per << "%"; \
-if(yafLog.getConsoleLogColorsEnabled()) std::cout << setColor(); \
-std::cout << ")" << std::flush
+std::cout << "\r" << setColor(Green) << "INFO: " << \
+setColor(Red, true) << "[" << setColor(Green, true) << std::string(progFull, '#') << std::string(progEmpty, ' ') << setColor(Red, true) << "] " << \
+setColor() << "(" << setColor(Yellow, true) << per << "%" << setColor() << ")" << std::flush
 
 ConsoleProgressBar_t::ConsoleProgressBar_t(int cwidth): width(cwidth), nSteps(0), doneSteps(0)
 {
@@ -72,12 +56,6 @@ void ConsoleProgressBar_t::update(int steps)
 void ConsoleProgressBar_t::done()
 {
 	printBar(0, totalBarLen, 100) << yendl;
-}
-
-float ConsoleProgressBar_t::getPercent() const
-{
-	float progress = 100.f * RoundFloatPrecision((float) std::min(doneSteps, nSteps) / (float) nSteps, 0.01);
-	return progress;
 }
 
 __END_YAFRAY

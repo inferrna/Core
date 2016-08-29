@@ -22,27 +22,22 @@
 
 #include <core_api/imagefilm.h>
 #include <core_api/imagehandler.h>
-#include <core_api/scene.h>
 #include <yafraycore/monitor.h>
 #include <yafraycore/timer.h>
 #include <utilities/math_utils.h>
 #include <resources/yafLogoTiny.h>
 
+#include <yaf_revision.h>
 #include <cstring>
 #include <string>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <iomanip>
-#include <utility>
-#include <boost/filesystem.hpp>
-#include <boost/foreach.hpp> 
-#include <boost/filesystem.hpp>
 
 #if HAVE_FREETYPE
 #include <resources/guifont.h>
 #include <ft2build.h>
-#include <utilities/stringUtils.h>
 #include FT_FREETYPE_H
 #endif
 
@@ -132,15 +127,11 @@ env(e), showMask(showSamMask), tileSize(tSize), tilesOrder(tOrder), premultAlpha
 	cy1 = ystart + height;
 	filterTable = new float[FILTER_TABLE_SIZE * FILTER_TABLE_SIZE];
 
-	//Creation of the image buffers for the render passes
-	for(int idx = 0; idx < env->getRenderPasses()->extPassesSize(); ++idx)
-	{
-		imagePasses.push_back(new rgba2DImage_t(width, height));
-	}
-
-	densityImage = nullptr;
+	image = new rgba2DImage_t(width, height);
+	densityImage = NULL;
 	estimateDensity = false;
-	dpimage = nullptr;
+	depthMap = NULL;
+	dpimage = NULL;
 
 	// fill filter table:
 	float *fTp = filterTable;
@@ -171,25 +162,12 @@ env(e), showMask(showSamMask), tileSize(tSize), tilesOrder(tOrder), premultAlpha
 	area_cnt = 0;
 
 	pbar = new ConsoleProgressBar_t(80);
-	session.setStatusCurrentPassPercent(pbar->getPercent());
-	
-	AA_detect_color_noise = false;
-	AA_dark_threshold_factor = 0.f;
-	AA_variance_edge_size = 10;
-	AA_variance_pixels = 0;
-	AA_clamp_samples = 0.f;	
 }
 
 imageFilm_t::~imageFilm_t ()
 {
-	
-	//Deletion of the image buffers for the additional render passes
-	for(size_t idx = 0; idx < imagePasses.size(); ++idx)
-	{
-		delete(imagePasses[idx]);
-	}
-	imagePasses.clear();
-	
+	delete image;
+	if(depthMap) delete depthMap;
 	if(densityImage) delete densityImage;
 	delete[] filterTable;
 	if(splitter) delete splitter;
@@ -199,11 +177,8 @@ imageFilm_t::~imageFilm_t ()
 
 void imageFilm_t::init(int numPasses)
 {
-	// Clear color buffers
-	for(size_t idx = 0; idx < imagePasses.size(); ++idx)
-	{
-		imagePasses[idx]->clear();
-	}
+	// Clear color buffer
+	image->clear();
 
 	// Clear density image
 	if(estimateDensity)
@@ -216,211 +191,80 @@ void imageFilm_t::init(int numPasses)
 	if(split)
 	{
 		next_area = 0;
-		scene_t *scene = env->getScene();
-		int nThreads = 1;
-		if(scene) nThreads = scene->getNumThreads();
-		splitter = new imageSpliter_t(w, h, cx0, cy0, tileSize, tilesOrder, nThreads);
+		splitter = new imageSpliter_t(w, h, cx0, cy0, tileSize, tilesOrder);
 		area_cnt = splitter->size();
 	}
 	else area_cnt = 1;
 
-	if(pbar) pbar->init(w * h);
-	session.setStatusCurrentPassPercent(pbar->getPercent());
+	if(pbar) pbar->init(area_cnt);
 
 	abort = false;
 	completed_cnt = 0;
 	nPass = 1;
 	nPasses = numPasses;
+}
 
-	imagesAutoSavePassCounter = 0;
-	filmAutoSavePassCounter = 0;
-	resetImagesAutoSaveTimer();
-	resetFilmAutoSaveTimer();
-	gTimer.addEvent("imagesAutoSaveTimer");
-	gTimer.addEvent("filmAutoSaveTimer");
-	gTimer.start("imagesAutoSaveTimer");
-	gTimer.start("filmAutoSaveTimer");
-
-	if(!output->isPreview())	// Avoid doing the Film Load & Save operations and updating the film check values when we are just rendering a preview!
-	{
-		if(filmFileSaveLoad == FILM_FILE_LOAD_SAVE) imageFilmLoadAllInFolder();	//Load all the existing Film in the images output folder, combining them together. It will load only the Film files with the same "base name" as the output image film (including file name, computer node name and frame) to allow adding samples to animations.
-	
-		if(filmFileSaveLoad == FILM_FILE_LOAD_SAVE || filmFileSaveLoad == FILM_FILE_SAVE) imageFilmFileBackup(); //If the imageFilm is set to Save, at the start rename the previous film file as a "backup" just in case the user has made a mistake and wants to get the previous film back. 
-
-		imageFilmUpdateCheckInfo(); //film load check data initialization. Make sure this is done after the Film Load operation (if any).
-	}
+void imageFilm_t::initDepthMap()
+{
+	if(!depthMap) depthMap = new gray2DImage_t(w, h);
+	else depthMap->clear();
 }
 
 void imageFilm_t::nextPass(bool adaptive_AA, std::string integratorName)
 {
 	int n_resample=0;
 
-int imageFilm_t::nextPass(int numView, bool adaptive_AA, std::string integratorName, bool skipNextPass)
-{
 	splitterMutex.lock();
 	next_area = 0;
 	splitterMutex.unlock();
 	nPass++;
-	imagesAutoSavePassCounter++;
-	filmAutoSavePassCounter++;
-	
-	if(skipNextPass) return 0;
-	
 	std::stringstream passString;
-
-	Y_DEBUG << "nPass=" << nPass << " imagesAutoSavePassCounter="<<imagesAutoSavePassCounter<<" filmAutoSavePassCounter="<<filmAutoSavePassCounter<<yendl;
-
-	if(session.renderInProgress() && !output->isPreview())	//avoid saving images/film if we are just rendering material/world/lights preview windows, etc
-	{
-		colorOutput_t *out2 = env->getOutput2();
-
-		if((imagesAutoSaveIntervalType == AUTOSAVE_PASS_INTERVAL) && (imagesAutoSavePassCounter >= imagesAutoSaveIntervalPasses))
-		{
-			if(output && output->isImageOutput()) this->flush(numView, IF_ALL, output);
-			else if(out2 && out2->isImageOutput()) this->flush(numView, IF_ALL, out2);
-			imagesAutoSavePassCounter = 0;
-		}
-
-		if((filmFileSaveLoad == FILM_FILE_LOAD_SAVE || filmFileSaveLoad == FILM_FILE_SAVE) && (filmAutoSaveIntervalType == AUTOSAVE_PASS_INTERVAL) && (filmAutoSavePassCounter >= filmAutoSaveIntervalPasses))
-		{
-			if((output && output->isImageOutput()) || (out2 && out2->isImageOutput()))
-			{
-				imageFilmSave();
-				filmAutoSavePassCounter = 0;
-			}
-		}
-	}
 
 	if(flags) flags->clear();
 	else flags = new tiledBitArray2D_t<3>(w, h, true);
-    std::vector<colorA_t> colExtPasses(imagePasses.size(), colorA_t(0.f));
-	int variance_half_edge = AA_variance_edge_size / 2;
-	
-	float AA_thresh_scaled = AA_thesh;
 
-	int n_resample=0;
-	
 	if(adaptive_AA && AA_thesh > 0.f)
 	{
 		for(int y=0; y<h-1; ++y)
 		{
 			for(int x = 0; x < w-1; ++x)
 			{
-				flags->clearBit(x, y);
-			}
-		}
-		
-		for(int y=0; y<h-1; ++y)
-		{
-			for(int x = 0; x < w-1; ++x)
-			{
-                //We will only consider the Combined Pass (pass 0) for the AA additional sampling calculations.
+				bool needAA = false;
+				float c = (*image)(x, y).normalized().abscol2bri();
+				if(std::fabs(c - (*image)(x+1, y).normalized().col2bri()) >= AA_thesh)
+				{
+					needAA=true; flags->setBit(x+1, y);
+				}
+				if(std::fabs(c - (*image)(x, y+1).normalized().col2bri()) >= AA_thesh)
+				{
+					needAA=true; flags->setBit(x, y+1);
+				}
+				if(std::fabs(c - (*image)(x+1, y+1).normalized().col2bri()) >= AA_thesh)
+				{
+					needAA=true; flags->setBit(x+1, y+1);
+				}
+				if(x > 0 && std::fabs(c - (*image)(x-1, y+1).normalized().col2bri()) >= AA_thesh)
+				{
+					needAA=true; flags->setBit(x-1, y+1);
+				}
+				if(needAA)
+				{
+					flags->setBit(x, y);
 
-				if((*imagePasses.at(0))(x, y).weight <= 0.f) flags->setBit(x, y);	//If after reloading ImageFiles there are pixels that were not yet rendered at all, make sure they are marked to be rendered in the next AA pass
-
-				colorA_t pixCol = (*imagePasses.at(0))(x, y).normalized();
-				float pixColBri = pixCol.abscol2bri();
-
-				if(AA_dark_detection_type == DARK_DETECTION_LINEAR && AA_dark_threshold_factor > 0.f)
-				{
-					if(AA_dark_threshold_factor > 0.f) AA_thresh_scaled = AA_thesh*((1.f-AA_dark_threshold_factor) + (pixColBri*AA_dark_threshold_factor));
-				}
-				else if(AA_dark_detection_type == DARK_DETECTION_CURVE)
-				{
-					AA_thresh_scaled = dark_threshold_curve_interpolate(pixColBri);
-				}
-				
-				if(pixCol.colorDifference((*imagePasses.at(0))(x+1, y).normalized(), AA_detect_color_noise) >= AA_thresh_scaled)
-				{
-					flags->setBit(x, y); flags->setBit(x+1, y);
-				}
-				if(pixCol.colorDifference((*imagePasses.at(0))(x, y+1).normalized(), AA_detect_color_noise) >= AA_thresh_scaled)
-				{
-					flags->setBit(x, y); flags->setBit(x, y+1);
-				}
-				if(pixCol.colorDifference((*imagePasses.at(0))(x+1, y+1).normalized(), AA_detect_color_noise) >= AA_thresh_scaled)
-				{
-					flags->setBit(x, y); flags->setBit(x+1, y+1);
-				}
-				if(x > 0 && pixCol.colorDifference((*imagePasses.at(0))(x-1, y+1).normalized(), AA_detect_color_noise) >= AA_thresh_scaled)
-				{
-					flags->setBit(x, y); flags->setBit(x-1, y+1);
-				}
-				
-				if(AA_variance_pixels > 0)
-				{
-					int variance_x = 0, variance_y = 0;//, pixelcount = 0;
-					
-					//float window_accum = 0.f, window_avg = 0.f;
-					
-					for(int xd = -variance_half_edge; xd < variance_half_edge - 1 ; ++xd)
+					if(interactive && showMask)
 					{
-						int xi = x + xd;
-						if(xi<0) xi = 0;
-						else if(xi>=w-1) xi = w-2;
-						
-						colorA_t cx0 = (*imagePasses.at(0))(xi, y).normalized();
-						colorA_t cx1 = (*imagePasses.at(0))(xi+1, y).normalized();
-						
-						if(cx0.colorDifference(cx1, AA_detect_color_noise) >= AA_thresh_scaled) ++variance_x;
-					}
-					
-					for(int yd = -variance_half_edge; yd < variance_half_edge - 1 ; ++yd)
-					{
-						int yi = y + yd;
-						if(yi<0) yi = 0;
-						else if(yi>=h-1) yi = h-2;
-						
-						colorA_t cy0 = (*imagePasses.at(0))(x, yi).normalized();
-						colorA_t cy1 = (*imagePasses.at(0))(x, yi+1).normalized();
-						
-						if(cy0.colorDifference(cy1, AA_detect_color_noise) >= AA_thresh_scaled) ++variance_y;
+						color_t pix = (*image)(x, y).normalized();
+						color_t pixcol(0.f);
+
+						if(pix.R < pix.G && pix.R < pix.B)
+							pixcol.set(0.7f, c, c);
+						else
+							pixcol.set(c, 0.7f, c);
+
+						output->putPixel(x, y, (const float *)&pixcol, false);
 					}
 
-					if(variance_x + variance_y >= AA_variance_pixels)
-					{
-						for(int xd = -variance_half_edge; xd < variance_half_edge; ++xd)
-						{
-							for(int yd = -variance_half_edge; yd < variance_half_edge; ++yd)
-							{
-								int xi = x + xd;
-								if(xi<0) xi = 0;
-								else if(xi>=w) xi = w-1;
-
-								int yi = y + yd;
-								if(yi<0) yi = 0;
-								else if(yi>=h) yi = h-1;
-
-								flags->setBit(xi, yi);
-							}
-						}
-					}
-				}
-			}
-		}
-
-		for(int y=0; y<h; ++y)
-		{
-			for(int x = 0; x < w; ++x)
-			{
-				if(flags->getBit(x, y))
-				{	
 					++n_resample;
-												
-					if(session.isInteractive() && showMask)
-					{
-						for(size_t idx = 0; idx < imagePasses.size(); ++idx)
-						{
-							color_t pix = (*imagePasses[idx])(x, y).normalized();
-							float pixColBri = pix.abscol2bri();
-
-							if(pix.R < pix.G && pix.R < pix.B)
-								colExtPasses[idx].set(0.7f, pixColBri, pixColBri);
-							else
-								colExtPasses[idx].set(pixColBri, 0.7f, pixColBri);
-						}
-						output->putPixel(numView, x, y, env->getRenderPasses(), colExtPasses, false);
-					}
 				}
 			}
 		}
@@ -430,26 +274,21 @@ int imageFilm_t::nextPass(int numView, bool adaptive_AA, std::string integratorN
 		n_resample = h*w;
 	}
 
-	if(session.isInteractive())	output->flush(numView, env->getRenderPasses());
+	if(interactive) output->flush();
 
-	if(session.renderResumed()) passString << "Film loaded + ";
-	
 	passString << "Rendering pass " << nPass << " of " << nPasses << ", resampling " << n_resample << " pixels.";
 
 	Y_INFO << integratorName << ": " << passString.str() << yendl;
 
 	if(pbar)
 	{
-		pbar->init(w * h);
-		session.setStatusCurrentPassPercent(pbar->getPercent());
+		pbar->init(area_cnt);
 		pbar->setTag(passString.str().c_str());
 	}
 	completed_cnt = 0;
-	
-	return n_resample;
 }
 
-bool imageFilm_t::nextArea(int numView, renderArea_t &a)
+bool imageFilm_t::nextArea(renderArea_t &a)
 {
 	if(abort) return false;
 
@@ -469,11 +308,11 @@ bool imageFilm_t::nextArea(int numView, renderArea_t &a)
 			a.sy0 = a.Y + ifilterw;
 			a.sy1 = a.Y + a.H - ifilterw;
 
-			if(session.isInteractive())
+			if(interactive)
 			{
 				outMutex.lock();
 				int end_x = a.X+a.W, end_y = a.Y+a.H;
-				output->highliteArea(numView, a.X, a.Y, end_x, end_y);
+				output->highliteArea(a.X, a.Y, end_x, end_y);
 				outMutex.unlock();
 			}
 
@@ -497,13 +336,12 @@ bool imageFilm_t::nextArea(int numView, renderArea_t &a)
 	return false;
 }
 
-void imageFilm_t::finishArea(int numView, renderArea_t &a)
+void imageFilm_t::finishArea(renderArea_t &a)
 {
 	outMutex.lock();
 
 	int end_x = a.X+a.W-cx0, end_y = a.Y+a.H-cy0;
-
-    std::vector<colorA_t> colExtPasses(imagePasses.size(), colorA_t(0.f));
+	colorA_t col;
 
 	for(int j=a.Y-cy0; j<end_y; ++j)
 	{
@@ -525,322 +363,83 @@ void imageFilm_t::finishArea(int numView, renderArea_t &a)
 			}
 			else
 			{
-				colExtPasses[idx] = (*imagePasses[idx])(i, j).normalized();
-                
-				if(env->getRenderPasses()->intPassTypeFromExtPassIndex(idx) == PASS_INT_AA_SAMPLES)
-				{
-					colExtPasses[idx] = (*imagePasses[idx])(i, j).weight;
-				}
-				
-				colExtPasses[idx].clampRGB0();
-				colExtPasses[idx].ColorSpace_from_linearRGB(colorSpace, gamma);//FIXME DAVID: what passes must be corrected and what do not?
-				if(premultAlpha && idx == 0) colExtPasses[idx].alphaPremultiply();
-
-				//To make sure we don't have any weird Alpha values outside the range [0.f, +1.f]
-				if(colExtPasses[idx].A < 0.f) colExtPasses[idx].A = 0.f;
-				else if(colExtPasses[idx].A > 1.f) colExtPasses[idx].A = 1.f;
+				if( !output->putPixel(i, j, (const float *)&col) ) abort=true;
 			}
 
-			if( !output->putPixel(numView, i, j, env->getRenderPasses(), colExtPasses) ) abort=true;
 		}
 	}
 
-	if(session.isInteractive()) output->flushArea(numView, a.X, a.Y, end_x+cx0, end_y+cy0, env->getRenderPasses());
-	
-	if(session.renderInProgress() && !output->isPreview())	//avoid saving images/film if we are just rendering material/world/lights preview windows, etc
+	if(interactive) output->flushArea(a.X, a.Y, end_x+cx0, end_y+cy0);
+
+	if(pbar)
 	{
-		gTimer.stop("imagesAutoSaveTimer");
-		imagesAutoSaveTimer += gTimer.getTime("imagesAutoSaveTimer");
-		if(imagesAutoSaveTimer < 0.f) resetImagesAutoSaveTimer(); //to solve some strange very negative value when using yafaray-xml, race condition somewhere?
-		gTimer.start("imagesAutoSaveTimer");
-
-		gTimer.stop("filmAutoSaveTimer");
-		filmAutoSaveTimer += gTimer.getTime("filmAutoSaveTimer");
-		if(filmAutoSaveTimer < 0.f) resetFilmAutoSaveTimer(); //to solve some strange very negative value when using yafaray-xml, race condition somewhere?
-		gTimer.start("filmAutoSaveTimer");
-
-		colorOutput_t *out2 = env->getOutput2();
-
-		if((imagesAutoSaveIntervalType == AUTOSAVE_TIME_INTERVAL) && (imagesAutoSaveTimer > imagesAutoSaveIntervalSeconds))
-		{
-			Y_DEBUG << "imagesAutoSaveTimer="<<imagesAutoSaveTimer<<yendl;
-			if(output && output->isImageOutput()) this->flush(numView, IF_ALL, output);
-			else if(out2 && out2->isImageOutput()) this->flush(numView, IF_ALL, out2);
-			resetImagesAutoSaveTimer();
-		}
-
-		if((filmFileSaveLoad == FILM_FILE_LOAD_SAVE || filmFileSaveLoad == FILM_FILE_SAVE) && (filmAutoSaveIntervalType == AUTOSAVE_TIME_INTERVAL) && (filmAutoSaveTimer > filmAutoSaveIntervalSeconds))
-		{
-			Y_DEBUG << "filmAutoSaveTimer="<<filmAutoSaveTimer<<yendl;
-			if((output && output->isImageOutput()) || (out2 && out2->isImageOutput()))
-			{
-				imageFilmSave();
-			}
-			resetFilmAutoSaveTimer();
-		}
+		if(++completed_cnt == area_cnt) pbar->done();
+		else pbar->update(1);
 	}
 
-    if(pbar)
-    {
-        if(++completed_cnt == area_cnt) pbar->done();
-        else pbar->update(a.W * a.H);
-        session.setStatusCurrentPassPercent(pbar->getPercent());
-    }
-    
 	outMutex.unlock();
 }
 
-void imageFilm_t::flush(int numView, int flags, colorOutput_t *out)
+void imageFilm_t::flush(int flags, colorOutput_t *out)
 {
-	if(session.renderFinished())
-	{
-		outMutex.lock();
-		Y_INFO << "imageFilm: Flushing buffer (View number " << numView << ")..." << yendl;
-	}
+	outMutex.lock();
 
-	colorOutput_t *out1 = out ? out : output;
-	colorOutput_t *out2 = env->getOutput2();
+	Y_INFO << "imageFilm: Flushing buffer..." << yendl;
 
-	if(out1->isPreview()) out2 = nullptr;	//disable secondary file output when rendering a Preview (material preview, etc)
-	
-	if(out1 == out2) out1 = nullptr;	//if we are already flushing the secondary output (out2) as main output (out1), then disable out1 to avoid duplicated work
+	colorOutput_t *colout = out ? out : output;
 
-	std::string version = session.getYafaRayCoreVersion();
+	if (drawParams) drawRenderSettings();
 
-	std::stringstream ssBadge;
-
-	if(!yafLog.getLoggingTitle().empty()) ssBadge << yafLog.getLoggingTitle() << "\n";
-	if(!yafLog.getLoggingAuthor().empty() && !yafLog.getLoggingContact().empty()) ssBadge << yafLog.getLoggingAuthor() << " | " << yafLog.getLoggingContact() << "\n";
-	else if(!yafLog.getLoggingAuthor().empty() && yafLog.getLoggingContact().empty()) ssBadge << yafLog.getLoggingAuthor() << "\n";
-	else if(yafLog.getLoggingAuthor().empty() && !yafLog.getLoggingContact().empty()) ssBadge << yafLog.getLoggingContact() << "\n";
-	if(!yafLog.getLoggingComments().empty()) ssBadge << yafLog.getLoggingComments() << "\n";
-
-	ssBadge << "\nYafaRay (" << version << ")" << " " << sysInfoGetOS() << sysInfoGetArchitecture() << sysInfoGetPlatform() << sysInfoGetCompiler(); 
-
-	ssBadge << std::setprecision(2);
-	double times = gTimer.getTimeNotStopping("rendert");
-	if(session.renderFinished()) times = gTimer.getTime("rendert");
-	int timem, timeh;
-	gTimer.splitTime(times, &times, &timem, &timeh);
-	ssBadge << " | " << w << "x" << h;
-	if(session.renderInProgress()) ssBadge << " | " << (session.renderResumed() ? "film loaded + " : "") << "in progress " << std::fixed << std::setprecision(1) << session.currentPassPercent() << "% of pass: " << session.currentPass() << " / " << session.totalPasses();
-	else if(session.renderAborted()) ssBadge << " | " << (session.renderResumed() ? "film loaded + " : "") << "stopped at " << std::fixed << std::setprecision(1) << session.currentPassPercent() << "% of pass: " << session.currentPass() << " / " << session.totalPasses();
-	else 
-	{
-		if(session.renderResumed())	ssBadge << " | film loaded + " << session.totalPasses()-1 << " passes";
-		else ssBadge << " | " << session.totalPasses() << " passes";
-	}
-	//if(cx0 != 0) ssBadge << ", xstart=" << cx0; 
-	//if(cy0 != 0) ssBadge << ", ystart=" << cy0;
-	ssBadge << " | Render time:";
-	if (timeh > 0) ssBadge << " " << timeh << "h";
-	if (timem > 0) ssBadge << " " << timem << "m";
-	ssBadge << " " << times << "s";
-	
-	times = gTimer.getTimeNotStopping("rendert") + gTimer.getTime("prepass");
-	if(session.renderFinished()) times = gTimer.getTime("rendert") + gTimer.getTime("prepass");
-	gTimer.splitTime(times, &times, &timem, &timeh);
-	ssBadge << " | Total time:";
-	if (timeh > 0) ssBadge << " " << timeh << "h";
-	if (timem > 0) ssBadge << " " << timem << "m";
-	ssBadge << " " << times << "s";
-	
-	std::stringstream ssLog;
-	ssLog << ssBadge.str();
-	yafLog.setRenderInfo(ssBadge.str());
-	
-	if(yafLog.getDrawRenderSettings()) ssBadge << " | " << yafLog.getRenderSettings();
-	if(yafLog.getDrawAANoiseSettings()) ssBadge << "\n" << yafLog.getAANoiseSettings();
-	if(output && output->isImageOutput()) ssBadge << " " << output->getDenoiseParams();
-	else if(out2 && out2->isImageOutput()) ssBadge << " " << out2->getDenoiseParams();
-
-	ssLog << " | " << yafLog.getRenderSettings();
-	ssLog << "\n" << yafLog.getAANoiseSettings();
-	if(output && output->isImageOutput()) ssLog << " " << output->getDenoiseParams();
-	else if(out2 && out2->isImageOutput()) ssLog << " " << out2->getDenoiseParams();
-
-	if(yafLog.getUseParamsBadge())
-	{
-		if((out1 && out1->isImageOutput()) || (out2 && out2->isImageOutput())) drawRenderSettings(ssBadge);
-	}
-
-	if(session.renderFinished())
-	{
-		Y_PARAMS << "--------------------------------------------------------------------------------" << yendl;
-		for (std::string line; std::getline(ssLog, line, '\n');) if(line != "" && line != "\n") Y_PARAMS << line << yendl;
-		Y_PARAMS << "--------------------------------------------------------------------------------" << yendl;
-	}
-	
 #ifndef HAVE_FREETYPE
 	Y_WARNING << "imageFilm: Compiled without FreeType support." << yendl;
 	Y_WARNING << "imageFilm: Text on the parameters badge won't be available." << yendl;
 #endif
 
 	float multi = 0.f;
+	colorA_t col;
+	int k = 0;
 
 	if(estimateDensity) multi = (float) (w * h) / (float) numSamples;
-
-    std::vector<colorA_t> colExtPasses(imagePasses.size(), colorA_t(0.f));
-
-    std::vector<colorA_t> colExtPasses2;	//For secondary file output (when enabled)
-	if(out2) colExtPasses2.resize(imagePasses.size(), colorA_t(0.f));
-
-	int outputDisplaceRenderedImageBadgeHeight = 0, out2DisplaceRenderedImageBadgeHeight = 0;
-	
-	if(out1 && out1->isImageOutput() && yafLog.isParamsBadgeTop()) outputDisplaceRenderedImageBadgeHeight = yafLog.getBadgeHeight();
-	
-	if(out2 && out2->isImageOutput() && yafLog.isParamsBadgeTop()) out2DisplaceRenderedImageBadgeHeight = yafLog.getBadgeHeight();
 
 	for(int j = 0; j < h; j++)
 	{
 		for(int i = 0; i < w; i++)
 		{
-			for(size_t idx = 0; idx < imagePasses.size(); ++idx)
+			if(flags & IF_IMAGE) col = (*image)(i, j).normalized();
+			else col = colorA_t(0.f);
+
+			if(estimateDensity && (flags & IF_DENSITYIMAGE)) col += (*densityImage)(i, j) * multi;
+
+			col.clampRGB0();
+
+			if(correctGamma) col.gammaAdjust(gamma);
+
+			if(drawParams && h - j <= dpHeight && dpimage)
 			{
-				if(flags & IF_IMAGE) colExtPasses[idx] = (*imagePasses[idx])(i, j).normalized();
-				else colExtPasses[idx] = colorA_t(0.f);
-				
-				if(env->getRenderPasses()->intPassTypeFromExtPassIndex(idx) == PASS_INT_AA_SAMPLES)
-				{
-					colExtPasses[idx] = (*imagePasses[idx])(i, j).weight;
-				}
-								
-				if(estimateDensity && (flags & IF_DENSITYIMAGE) && idx == 0) colExtPasses[idx] += (*densityImage)(i, j) * multi;
-				colExtPasses[idx].clampRGB0();
-				
-				if(out2) colExtPasses2[idx] = colExtPasses[idx];
-				
-				colExtPasses[idx].ColorSpace_from_linearRGB(colorSpace, gamma);//FIXME DAVID: what passes must be corrected and what do not?
-				
-				if(out2) colExtPasses2[idx].ColorSpace_from_linearRGB(colorSpace2, gamma2);
-
-				if(premultAlpha && idx == 0) 
-				{
-					colExtPasses[idx].alphaPremultiply();
-				}
-
-				if(out2 && premultAlpha2 && idx == 0) 
-				{
-					colExtPasses2[idx].alphaPremultiply();
-				}
-
-				//To make sure we don't have any weird Alpha values outside the range [0.f, +1.f]
-				if(colExtPasses[idx].A < 0.f) colExtPasses[idx].A = 0.f;
-				else if(colExtPasses[idx].A > 1.f) colExtPasses[idx].A = 1.f;
-
-				if(out2)
-				{
-					if(colExtPasses2[idx].A < 0.f) colExtPasses2[idx].A = 0.f;
-					else if(colExtPasses2[idx].A > 1.f) colExtPasses2[idx].A = 1.f;
-				}
+				colorA_t &dpcol = (*dpimage)(i, k);
+				col = colorA_t( alphaBlend(col, dpcol, dpcol.getA()), std::max(col.getA(), dpcol.getA()) );
 			}
 
-			if(out1) out1->putPixel(numView, i, j+outputDisplaceRenderedImageBadgeHeight, env->getRenderPasses(), colExtPasses);
-			if(out2) out2->putPixel(numView, i, j+out2DisplaceRenderedImageBadgeHeight, env->getRenderPasses(), colExtPasses2);
-		}
-	}
+			if(premultAlpha) col.alphaPremultiply();
 
-	if(yafLog.getUseParamsBadge() && dpimage)
-	{
-		if(out1 && out1->isImageOutput())
-		{
-			int badgeStartY = h;
-			
-			if(yafLog.isParamsBadgeTop()) badgeStartY = 0;
-			
-			for(int j = badgeStartY; j < badgeStartY+dpHeight; j++)
+			if(depthMap)
 			{
-				for(int i = 0; i < w; i++)
-				{
-					for(size_t idx = 0; idx < imagePasses.size(); ++idx)
-					{
-						colorA_t &dpcol = (*dpimage)(i, j-badgeStartY);
-						colExtPasses[idx] = colorA_t(dpcol, 1.f);
-					}
-					out1->putPixel(numView, i, j, env->getRenderPasses(), colExtPasses);
-				}
+				colout->putPixel(i, j, (const float*)&col, true, true, (*depthMap)(i, j).normalized());
+			}
+			else
+			{
+				colout->putPixel(i, j, (const float*)&col);
 			}
 		}
 
-		if(out2 && out2->isImageOutput())
-		{
-			int badgeStartY = h;
-			
-			if(yafLog.isParamsBadgeTop()) badgeStartY = 0;
-			
-			for(int j = badgeStartY; j < badgeStartY+dpHeight; j++)
-			{
-				for(int i = 0; i < w; i++)
-				{
-					for(size_t idx = 0; idx < imagePasses.size(); ++idx)
-					{
-						colorA_t &dpcol = (*dpimage)(i, j-badgeStartY);
-						colExtPasses2[idx] = colorA_t(dpcol, 1.f);
-					}
-					out2->putPixel(numView, i, j, env->getRenderPasses(), colExtPasses2);
-				}
-			}
-		}
+		if(drawParams && h - j <= dpHeight) k++;
 	}
 
-	if(out1 && (session.renderFinished() || out1->isImageOutput())) 
-	{
-		std::stringstream passString;
-		if(out1->isImageOutput()) passString << "Saving image files";
-		else passString << "Flushing output";
+	colout->flush();
 
-		Y_INFO << passString.str() << yendl;
+	outMutex.unlock();
 
-		std::string oldTag;
-
-		if(pbar)
-		{
-			oldTag = pbar->getTag();
-			pbar->setTag(passString.str().c_str());
-		}
-
-		out1->flush(numView, env->getRenderPasses());
-		
-		if(pbar) pbar->setTag(oldTag);
-	}
-	
-	if(out2 && out2->isImageOutput())
-	{
-		std::stringstream passString;
-		passString << "Saving image files";
-
-		Y_INFO << passString.str() << yendl;
-
-		std::string oldTag;
-
-		if(pbar)
-		{
-			oldTag = pbar->getTag();
-			pbar->setTag(passString.str().c_str());
-		}
-
-		out2->flush(numView, env->getRenderPasses());
-
-		if(pbar) pbar->setTag(oldTag);
-	}
-
-	if(session.renderFinished())
-	{
-		if(!output->isPreview() && (filmFileSaveLoad == FILM_FILE_LOAD_SAVE || filmFileSaveLoad == FILM_FILE_SAVE))
-		{
-			if((output && output->isImageOutput()) || (out2 && out2->isImageOutput()))
-			{
-				imageFilmSave();
-			}
-		}
-
-		gTimer.stop("imagesAutoSaveTimer");
-		gTimer.stop("filmAutoSaveTimer");
-
-		yafLog.clearMemoryLog();
-		outMutex.unlock();
-		Y_VERBOSE << "imageFilm: Done." << yendl;
-	}
+	Y_INFO << "imageFilm: Done." << yendl;
 }
 
 bool imageFilm_t::doMoreSamples(int x, int y) const
@@ -851,8 +450,12 @@ bool imageFilm_t::doMoreSamples(int x, int y) const
 /* CAUTION! Implemantation of this function needs to be thread safe for samples that
 	contribute to pixels outside the area a AND pixels that might get
 	contributions from outside area a! (yes, really!) */
-void imageFilm_t::addSample(colorPasses_t &colorPasses, int x, int y, float dx, float dy, const renderArea_t *a, int numSample, int AA_pass_number, float inv_AA_max_possible_samples)
+void imageFilm_t::addSample(const colorA_t &c, int x, int y, float dx, float dy, const renderArea_t *a)
 {
+	colorA_t col = c;
+
+	if(clamp) col.clampRGB01();
+
 	int dx0, dx1, dy0, dy1, x0, x1, y0, y1;
 
 	// get filter extent and make sure we don't leave image area:
@@ -893,35 +496,74 @@ void imageFilm_t::addSample(colorPasses_t &colorPasses, int x, int y, float dx, 
 			// get filter value at pixel (x,y)
 			int offset = yIndex[j-y0]*FILTER_TABLE_SIZE + xIndex[i-x0];
 			float filterWt = filterTable[offset];
-
 			// update pixel values with filtered sample contribution
-			for(size_t idx = 0; idx < imagePasses.size(); ++idx)
-			{
-				colorA_t col = colorPasses(env->getRenderPasses()->intPassTypeFromExtPassIndex(idx));
-				
-				col.clampProportionalRGB(AA_clamp_samples);
+			pixel_t &pixel = (*image)(i - cx0, j - cy0);
 
-				pixel_t &pixel = (*imagePasses[idx])(i - cx0, j - cy0);
+            if(premultAlpha) col.alphaPremultiply();
 
-				if(premultAlpha) col.alphaPremultiply();
+            pixel.col += (col * filterWt);
 
-				if(env->getRenderPasses()->intPassTypeFromExtPassIndex(idx) == PASS_INT_AA_SAMPLES)
-				{
-					pixel.weight += inv_AA_max_possible_samples / ((x1-x0+1)*(y1-y0+1));
-				}
-				else
-				{
-					pixel.col += (col * filterWt);
-					pixel.weight += filterWt;
-				}
-			}
+			pixel.weight += filterWt;
 		}
 	}
 
 	imageMutex.unlock();
 }
 
-void imageFilm_t::addDensitySample(const color_t& c, int x, int y, float dx, float dy, const renderArea_t *a)
+void imageFilm_t::addDepthSample(int chan, float val, int x, int y, float dx, float dy)
+{
+	int dx0, dx1, dy0, dy1, x0, x1, y0, y1;
+
+	// get filter extent and make sure we don't leave image area:
+
+	dx0 = std::max(cx0-x,   Round2Int( (double)dx - filterw));
+	dx1 = std::min(cx1-x-1, Round2Int( (double)dx + filterw - 1.0));
+	dy0 = std::max(cy0-y,   Round2Int( (double)dy - filterw));
+	dy1 = std::min(cy1-y-1, Round2Int( (double)dy + filterw - 1.0));
+
+	// get indizes in filter table
+	double x_offs = dx - 0.5;
+
+	int xIndex[MAX_FILTER_SIZE+1], yIndex[MAX_FILTER_SIZE+1];
+
+	for (int i=dx0, n=0; i <= dx1; ++i, ++n)
+	{
+		double d = std::fabs( (double(i) - x_offs) * tableScale);
+		xIndex[n] = Floor2Int(d);
+	}
+
+	double y_offs = dy - 0.5;
+
+	for (int i=dy0, n=0; i <= dy1; ++i, ++n)
+	{
+		double d = std::fabs( (double(i) - y_offs) * tableScale);
+		yIndex[n] = Floor2Int(d);
+	}
+
+	x0 = x+dx0; x1 = x+dx1;
+	y0 = y+dy0; y1 = y+dy1;
+
+	depthMapMutex.lock();
+
+	for (int j = y0; j <= y1; ++j)
+	{
+		for (int i = x0; i <= x1; ++i)
+		{
+			// get filter value at pixel (x,y)
+			int offset = yIndex[j-y0]*FILTER_TABLE_SIZE + xIndex[i-x0];
+			float filterWt = filterTable[offset];
+			// update pixel values with filtered sample contribution
+			pixelGray_t &pixel = (*depthMap)(i - cx0, j - cy0);
+
+			pixel.val += (val * filterWt);
+			pixel.weight += filterWt;
+		}
+	}
+
+	depthMapMutex.unlock();
+}
+
+void imageFilm_t::addDensitySample(const color_t &c, int x, int y, float dx, float dy, const renderArea_t *a)
 {
 	if(!estimateDensity) return;
 
@@ -947,7 +589,7 @@ void imageFilm_t::addDensitySample(const color_t& c, int x, int y, float dx, flo
 	double y_offs = dy - 0.5;
 	for (int i=dy0, n=0; i <= dy1; ++i, ++n)
 	{
-		float d = fabsf((float)((double(i) - y_offs) * tableScale));
+		float d = fabsf( (double(i) - y_offs) * tableScale);
 		yIndex[n] = Floor2Int(d);
 	}
 
@@ -986,21 +628,10 @@ void imageFilm_t::setDensityEstimation(bool enable)
 	estimateDensity = enable;
 }
 
-void imageFilm_t::setColorSpace(colorSpaces_t color_space, float gammaVal)
+void imageFilm_t::setGamma(float gammaVal, bool enable)
 {
-	colorSpace = color_space;
-	gamma = gammaVal;
-}
-
-void imageFilm_t::setColorSpace2(colorSpaces_t color_space, float gammaVal)
-{
-	colorSpace2 = color_space;
-	gamma2 = gammaVal;
-}
-
-void imageFilm_t::setPremult2(bool premult)
-{
-	premultAlpha2 = premult;
+	correctGamma = enable;
+	if(gammaVal > 0) gamma = 1.f/gammaVal; //gamma correction means applying gamma curve with 1/gamma
 }
 
 void imageFilm_t::setProgressBar(progressBar_t *pb)
@@ -1009,14 +640,19 @@ void imageFilm_t::setProgressBar(progressBar_t *pb)
 	pbar = pb;
 }
 
-void imageFilm_t::setAANoiseParams(bool detect_color_noise, int dark_detection_type, float dark_threshold_factor, int variance_edge_size, int variance_pixels, float clamp_samples)
+void imageFilm_t::setAAParams(const std::string &aa_params)
 {
-	AA_detect_color_noise = detect_color_noise;
-	AA_dark_detection_type = dark_detection_type;
-	AA_dark_threshold_factor = dark_threshold_factor;
-	AA_variance_edge_size = variance_edge_size;
-	AA_variance_pixels = variance_pixels;
-	AA_clamp_samples = clamp_samples;
+	aaSettings = aa_params;
+}
+
+void imageFilm_t::setIntegParams(const std::string &integ_params)
+{
+	integratorSettings = integ_params;
+}
+
+void imageFilm_t::setCustomString(const std::string &custom)
+{
+	customString = custom;
 }
 
 #if HAVE_FREETYPE
@@ -1024,9 +660,11 @@ void imageFilm_t::setAANoiseParams(bool detect_color_noise, int dark_detection_t
 void imageFilm_t::drawFontBitmap( FT_Bitmap* bitmap, int x, int y)
 {
 	int i, j, p, q;
-	int x_max = std::min(static_cast<int>(x + bitmap->width), dpimage->getWidth());
-	int y_max = std::min(static_cast<int>(y + bitmap->rows), dpimage->getHeight());
+	int x_max = x + bitmap->width;
+	int y_max = y + bitmap->rows;
 	color_t textColor(1.f);
+	int tmpBuf;
+	float alpha;
 
 	for ( i = x, p = 0; i < x_max; i++, p++ )
 	{
@@ -1034,12 +672,12 @@ void imageFilm_t::drawFontBitmap( FT_Bitmap* bitmap, int x, int y)
 		{
 			if ( i >= w || j >= h ) continue;
 
-			int tmpBuf = bitmap->buffer[q * bitmap->width + p];
+			tmpBuf = bitmap->buffer[q * bitmap->width + p];
 
 			if (tmpBuf > 0)
 			{
-				colorA_t &col = (*dpimage)(std::max(0,i), std::max(0,j));
-				float alpha = (float) tmpBuf / 255.0;
+				colorA_t &col = (*dpimage)(i, j);
+				alpha = (float) tmpBuf / 255.0;
 				col = colorA_t(alphaBlend((color_t)col, textColor, alpha), col.getA());
 			}
 		}
@@ -1048,15 +686,11 @@ void imageFilm_t::drawFontBitmap( FT_Bitmap* bitmap, int x, int y)
 
 #endif
 
-void imageFilm_t::drawRenderSettings(std::stringstream & ss)
+void imageFilm_t::drawRenderSettings()
 {
-	if(dpimage)
-	{
-		delete dpimage;
-		dpimage = nullptr;
-	}
+	if(dpimage) return;
 
-	dpHeight = yafLog.getBadgeHeight();
+	dpHeight = 30;
 
 	dpimage = new rgba2DImage_nw_t(w, dpHeight);
 #ifdef HAVE_FREETYPE
@@ -1095,7 +729,7 @@ void imageFilm_t::drawRenderSettings(std::stringstream & ss)
 	std::string text = ss.str();
 
 	// set font size at default dpi
-	float fontsize = 12.5f * yafLog.getLoggingFontSizeFactor();
+	float fontsize = 9.5f;
 
 	// initialize library
 	if (FT_Init_FreeType( &library ))
@@ -1105,28 +739,12 @@ void imageFilm_t::drawRenderSettings(std::stringstream & ss)
 	}
 
 	// create face object
-	std::string fontPath = yafLog.getLoggingFontPath();
-	if(fontPath.empty())
+	if (FT_New_Memory_Face( library, (const FT_Byte*)guifont, guifont_size, 0, &face ))
 	{
-		if (FT_New_Memory_Face( library, (const FT_Byte*)guifont, guifont_size, 0, &face ))
-		{
-			Y_ERROR << "imageFilm: FreeType couldn't load the default font!" << yendl;
-			return;
-		}
-	}
-	else if(FT_New_Face( library, fontPath.c_str(), 0, &face ))
-	{
-		Y_WARNING << "imageFilm: FreeType couldn't load the font '" << fontPath<< "', loading default font." << yendl;
-			
-		if (FT_New_Memory_Face( library, (const FT_Byte*)guifont, guifont_size, 0, &face ))
-		{
-			Y_ERROR << "imageFilm: FreeType couldn't load the default font!" << yendl;
-			return;
-		}
+		Y_ERROR << "imageFilm: FreeType couldn't load the font!" << yendl;
+		return;
 	}
 
-	FT_Select_Charmap(face , ft_encoding_unicode);
-	
 	// set character size
 	if (FT_Set_Char_Size( face, (FT_F26Dot6)(fontsize * 64.0), 0, 0, 0 ))
 	{
@@ -1136,8 +754,8 @@ void imageFilm_t::drawRenderSettings(std::stringstream & ss)
 
 	slot = face->glyph;
 
-	int textOffsetY = -1 * (int) ceil(12 * yafLog.getLoggingFontSizeFactor());
-	int textInterlineOffset = (int) ceil(13 * yafLog.getLoggingFontSizeFactor());
+	int textOffsetY = 18;
+	int textInterlineOffset = 13;
 #endif
 	// offsets
 	int textOffsetX = 4;
@@ -1167,25 +785,29 @@ void imageFilm_t::drawRenderSettings(std::stringstream & ss)
 		delete logo;
 	}
 
+	// Draw the dark bar at the bottom
+	float bgAlpha = 0.4f;
+	color_t bgColor(0.f);
+
+	for ( int x = logoWidth; x < w; x++ )
+	{
+		for ( int y = 0; y < dpHeight; y++ )
+		{
+			(*dpimage)(x, y) = colorA_t(bgColor, bgAlpha);
+		}
+	}
 #ifdef HAVE_FREETYPE
 	// The pen position in 26.6 cartesian space coordinates
 	pen.x = textOffsetX * 64;
 	pen.y = textOffsetY * 64;
 
 	// Draw the text
-	for ( size_t n = 0; n < wtext_utf32.size(); n++ )
+	for ( size_t n = 0; n < text.size(); n++ )
 	{
 		// Set Coordinates for the carrige return
-		if (wtext_utf32[n] == '\n') {
+		if (text[n] == '\n') {
 			pen.x = textOffsetX * 64;
 			pen.y -= textInterlineOffset * 64;
-			fontsize = 9.5f * yafLog.getLoggingFontSizeFactor();
-			if (FT_Set_Char_Size( face, (FT_F26Dot6)(fontsize * 64.0), 0, 0, 0 ))
-			{
-				Y_ERROR << "imageFilm: FreeType couldn't set the character size!" << yendl;
-				return;
-			}
-
 			continue;
 		}
 
@@ -1193,9 +815,9 @@ void imageFilm_t::drawRenderSettings(std::stringstream & ss)
 		FT_Set_Transform( face, 0, &pen );
 
 		// Load glyph image into the slot (erase previous one)
-		if (FT_Load_Char( face, wtext_utf32[n], FT_LOAD_DEFAULT ))
+		if (FT_Load_Char( face, text[n], FT_LOAD_DEFAULT ))
 		{
-			Y_ERROR << "imageFilm: FreeType Couldn't load the glyph image for: '" << wtext_utf32[n] << "'!" << yendl;
+			Y_ERROR << "imageFilm: FreeType Couldn't load the glyph image for: '" << text[n] << "'!" << yendl;
 			continue;
 		}
 
@@ -1203,7 +825,7 @@ void imageFilm_t::drawRenderSettings(std::stringstream & ss)
 		FT_Render_Glyph( slot, FT_RENDER_MODE_NORMAL );
 
 		// Now, draw to our target surface (convert position)
-		drawFontBitmap( &slot->bitmap, slot->bitmap_left, -slot->bitmap_top);
+		drawFontBitmap( &slot->bitmap, slot->bitmap_left, dpHeight - slot->bitmap_top);
 
 		// increment pen position
 		pen.x += slot->advance.x;
@@ -1214,364 +836,7 @@ void imageFilm_t::drawRenderSettings(std::stringstream & ss)
 	FT_Done_Face    ( face );
 	FT_Done_FreeType( library );
 #endif
-
-	// Draw logo image
-	paraMap_t ihParams;
-	
-	ihParams["for_output"] = false;
-	
-	bool logo_loaded = false;
-	imageHandler_t *logo = nullptr;
-
-	if(!yafLog.getLoggingCustomIcon().empty())
-	{
-		std::string iconExtension = yafLog.getLoggingCustomIcon().substr(yafLog.getLoggingCustomIcon().find_last_of(".") + 1);
-		std::transform(iconExtension.begin(), iconExtension.end(),iconExtension.begin(), ::tolower);
-		
-		std::string imageHandlerType = "png";
-		if(iconExtension == "jpeg") imageHandlerType = "jpg";
-		else imageHandlerType = iconExtension;
-
-		ihParams["type"] = imageHandlerType;
-		logo = env->createImageHandler("logoLoader", ihParams, false);
-	
-		if(logo && logo->loadFromFile(yafLog.getLoggingCustomIcon())) logo_loaded = true;
-		else Y_WARNING << "imageFilm: custom params badge icon '" << yafLog.getLoggingCustomIcon() << "' could not be loaded. Using default YafaRay icon." << yendl;
-	}
-
-	if(!logo_loaded)
-	{
-		ihParams["type"] = std::string("png");
-		logo = env->createImageHandler("logoLoader", ihParams, false);		
-		if(logo && logo->loadFromMemory(yafLogoTiny, yafLogoTiny_size)) logo_loaded = true;
-		else Y_WARNING << "imageFilm: default YafaRay params badge icon could not be loaded. No icon will be shown." << yendl;
-	}
-	
-	if(logo_loaded)
-	{
-		if(logo->getWidth() > 80 || logo->getHeight() > 45) Y_WARNING << "imageFilm: custom params badge logo is quite big (" << logo->getWidth() << " x " << logo->getHeight() << "). It could invade other areas in the badge. Please try to keep logo size smaller than 80 x 45, for example." << yendl;
-		int lx, ly;
-		int imWidth = std::min(logo->getWidth(), w);
-		int imHeight = std::min(logo->getHeight(), dpHeight);
-
-		for ( lx = 0; lx < imWidth; lx++ )
-			for ( ly = 0; ly < imHeight; ly++ )
-				if(yafLog.isParamsBadgeTop()) (*dpimage)(w-imWidth+lx, ly) = logo->getPixel(lx, ly);
-				else (*dpimage)(w-imWidth+lx, dpHeight-imHeight+ly) = logo->getPixel(lx, ly);
-
-		delete logo;
-	}
-
-	Y_VERBOSE << "imageFilm: Rendering parameters badge created." << yendl;
+	Y_INFO << "imageFilm: Rendering parameters badge created." << yendl;
 }
-
-float imageFilm_t::dark_threshold_curve_interpolate(float pixel_brightness)
-{
-	if(pixel_brightness <= 0.10f) return 0.0001f;
-	else if(pixel_brightness > 0.10f && pixel_brightness <= 0.20f) return (0.0001f + (pixel_brightness - 0.10f) * (0.0010f - 0.0001f) / 0.10f);
-	else if(pixel_brightness > 0.20f && pixel_brightness <= 0.30f) return (0.0010f + (pixel_brightness - 0.20f) * (0.0020f - 0.0010f) / 0.10f);
-	else if(pixel_brightness > 0.30f && pixel_brightness <= 0.40f) return (0.0020f + (pixel_brightness - 0.30f) * (0.0035f - 0.0020f) / 0.10f);
-	else if(pixel_brightness > 0.40f && pixel_brightness <= 0.50f) return (0.0035f + (pixel_brightness - 0.40f) * (0.0055f - 0.0035f) / 0.10f);
-	else if(pixel_brightness > 0.50f && pixel_brightness <= 0.60f) return (0.0055f + (pixel_brightness - 0.50f) * (0.0075f - 0.0055f) / 0.10f);
-	else if(pixel_brightness > 0.60f && pixel_brightness <= 0.70f) return (0.0075f + (pixel_brightness - 0.60f) * (0.0100f - 0.0075f) / 0.10f);
-	else if(pixel_brightness > 0.70f && pixel_brightness <= 0.80f) return (0.0100f + (pixel_brightness - 0.70f) * (0.0150f - 0.0100f) / 0.10f);
-	else if(pixel_brightness > 0.80f && pixel_brightness <= 0.90f) return (0.0150f + (pixel_brightness - 0.80f) * (0.0250f - 0.0150f) / 0.10f);
-	else if(pixel_brightness > 0.90f && pixel_brightness <= 1.00f) return (0.0250f + (pixel_brightness - 0.90f) * (0.0400f - 0.0250f) / 0.10f);
-	else if(pixel_brightness > 1.00f && pixel_brightness <= 1.20f) return (0.0400f + (pixel_brightness - 1.00f) * (0.0800f - 0.0400f) / 0.20f);
-	else if(pixel_brightness > 1.20f && pixel_brightness <= 1.40f) return (0.0800f + (pixel_brightness - 1.20f) * (0.0950f - 0.0800f) / 0.20f);
-	else if(pixel_brightness > 1.40f && pixel_brightness <= 1.80f) return (0.0950f + (pixel_brightness - 1.40f) * (0.1000f - 0.0950f) / 0.40f);
-	else return 0.1000f;
-}
-
-std::string imageFilm_t::getFilmPath() const
-{
-	std::string filmPath = session.getPathImageOutput();
-	std::stringstream node;
-	node << std::setfill('0') << std::setw(4) << computerNode;
-	filmPath += " - node " + node.str();
-	filmPath += ".film";
-	return filmPath;
-}
-
-bool imageFilm_t::imageFilmLoad(const std::string &filename)
-{
-	bool debugXMLformat = false;	//Enable only for debugging purposes
-
-	try
-	{
-		std::ifstream ifs(filename, std::fstream::binary);
-		char *memblock = new char [1];
-		ifs.seekg (0, std::ios::beg);
-		ifs.read (memblock, 1);
-		bool binaryfile = false;
-		if(memblock[0] < '0') binaryfile = true;	//If first character in the film file is not an ASCII number then consider it a binary file
-		delete memblock;
-		ifs.seekg (0, std::ios::beg);
-		
-		if(debugXMLformat)
-		{
-			Y_INFO << "imageFilm: Loading film from: \"" << filename << "\" in XML format" << yendl;
-			boost::archive::xml_iarchive ia(ifs);
-			ia >> BOOST_SERIALIZATION_NVP(*this);
-			ifs.close();
-		}
-		else if(binaryfile == true)
-		{
-			Y_INFO << "imageFilm: Loading film from: \"" << filename << "\" in Binary (non portable) format" << yendl;
-			boost::archive::binary_iarchive ia(ifs);
-			ia >> BOOST_SERIALIZATION_NVP(*this);
-			ifs.close();
-		}
-		else
-		{
-			Y_INFO << "imageFilm: Loading film from: \"" << filename << "\" in Text format" << yendl;
-			boost::archive::text_iarchive ia(ifs);
-			ia >> BOOST_SERIALIZATION_NVP(*this);
-			ifs.close();
-		}
-		Y_VERBOSE << "imageFilm: Film loaded from file." << yendl;
-		return true;
-	}
-	catch(std::exception& ex){
-        Y_WARNING << "imageFilm: error '" << ex.what() << "' while loading ImageFilm file: '" << filename << "'" << yendl;
-		return false;
-    }
-}
-
-void imageFilm_t::imageFilmLoadAllInFolder()
-{
-	std::stringstream passString;
-	passString << "Loading ImageFilm files";
-
-	Y_INFO << passString.str() << yendl;
-
-	std::string oldTag;
-
-	if(pbar)
-	{
-		oldTag = pbar->getTag();
-		pbar->setTag(passString.str().c_str());
-	}
-	
-	std::string filmPath = getFilmPath();
-	
-	std::string baseImageFileName = boost::filesystem::path(session.getPathImageOutput()).stem().string();
-
-	std::string parentPath = boost::filesystem::path(session.getPathImageOutput()).parent_path().string();
-	if(parentPath.empty()) parentPath = ".";	//If parent path is empty, set the path to the current folder
-	const std::string target_path( parentPath );
-	std::vector<std::string> filmFilesList;
-	
-	try
-	{
-		boost::filesystem::directory_iterator it_end;
-		for(boost::filesystem::directory_iterator it( target_path ); it != it_end; ++it)
-		{
-			if(!boost::filesystem::is_regular_file(it->status())) continue;
-			if(it->path().extension().string() != ".film") continue;
-			if(it->path().stem().string().size() < baseImageFileName.size()) continue;
-			if(it->path().stem().string().compare(0, baseImageFileName.size(), baseImageFileName) != 0) continue;
-			filmFilesList.push_back(it->path().string());
-		}
-		std::sort(filmFilesList.begin(), filmFilesList.end());
-
-		for(auto filmFile: filmFilesList)
-		{
-			imageFilm_t *loadedFilm = new imageFilm_t(w, h, cx0, cy0, *output, 1.0, BOX, env);
-			loadedFilm->imageFilmLoad(filmFile);
-			
-			for(size_t idx=0; idx<imagePasses.size(); ++idx)
-			{
-				for(int i=0; i<w; ++i)
-				{
-					for(int j=0; j<h; ++j)
-					{
-						rgba2DImage_t *loadedImageBuffer = loadedFilm->imagePasses[idx];
-						(*imagePasses[idx])(i,j).col += (*loadedImageBuffer)(i,j).col;
-						(*imagePasses[idx])(i,j).weight += (*loadedImageBuffer)(i,j).weight;
-					}
-				}
-			}
-			
-			if(samplingOffset < loadedFilm->samplingOffset) samplingOffset = loadedFilm->samplingOffset;
-			if(baseSamplingOffset < loadedFilm->baseSamplingOffset) baseSamplingOffset = loadedFilm->baseSamplingOffset;
-			
-			delete loadedFilm;
-		}
-	}
-	catch(const boost::filesystem::filesystem_error& e)
-	{
-		Y_WARNING << "imageFilm: error during imageFilm loading process: \"" << e.what() << "\"" << yendl;
-	}
-	
-	if(pbar) pbar->setTag(oldTag);
-}
-
-
-bool imageFilm_t::imageFilmSave()
-{
-	bool debugXMLformat = false;	//Enable only for debugging purposes
-	
-	std::stringstream passString;
-	passString << "Saving internal ImageFilm file";
-
-	Y_INFO << passString.str() << yendl;
-
-	std::string oldTag;
-
-	if(pbar)
-	{
-		oldTag = pbar->getTag();
-		pbar->setTag(passString.str().c_str());
-	}
-
-	std::string filmPath = getFilmPath();
-
-	try
-	{
-		std::ofstream ofs(filmPath+".tmp", std::fstream::binary);
-
-		if(debugXMLformat)
-		{
-			Y_INFO << "imageFilm: Saving film to: \"" << filmPath << "\" in XML format" << yendl;
-			boost::archive::xml_oarchive oa(ofs);
-			oa << BOOST_SERIALIZATION_NVP(*this);
-			ofs.close();
-		}
-		else if(filmFileSaveBinaryFormat)
-		{
-			Y_INFO << "imageFilm: Saving film to: \"" << filmPath << "\" in Binary (non portable) format" << yendl;
-			boost::archive::binary_oarchive oa(ofs);
-			oa << BOOST_SERIALIZATION_NVP(*this);
-			ofs.close();
-		}
-		else
-		{
-			Y_INFO << "imageFilm: Saving film to: \"" << filmPath << "\" in Text format" << yendl;
-			boost::archive::text_oarchive oa(ofs);
-			oa << BOOST_SERIALIZATION_NVP(*this);
-			ofs.close();
-		}
-	Y_VERBOSE << "imageFilm: Film saved to file." << yendl;
-	}
-	catch(std::exception& ex){
-        Y_WARNING << "imageFilm: error '" << ex.what() << "' while saving ImageFilm file: '" << filmPath << "'" << yendl;
-		if(pbar) pbar->setTag(oldTag);
-		return false;
-    }
-    
-	try
-	{
-		boost::filesystem::copy_file(filmPath+".tmp", filmPath, boost::filesystem::copy_option::overwrite_if_exists);
-		boost::filesystem::remove(filmPath+".tmp");
-	}
-	catch(const boost::filesystem::filesystem_error& e)
-	{
-		Y_WARNING << "imageFilm: file operation error \"" << e.what() << yendl;
-	}
-
-	if(pbar) pbar->setTag(oldTag);
-	
-	return true;
-}
-
-void imageFilm_t::imageFilmFileBackup() const
-{
-	std::stringstream passString;
-	passString << "Creating backup of the previous ImageFilm file...";
-
-	Y_INFO << passString.str() << yendl;
-
-	std::string oldTag;
-
-	if(pbar)
-	{
-		oldTag = pbar->getTag();
-		pbar->setTag(passString.str().c_str());
-	}
-
-	std::string filmPath = getFilmPath();
-	std::string filmPathBackup = filmPath+"-previous.bak";
-	
-	if(boost::filesystem::exists(filmPath))
-	{
-		Y_VERBOSE << "imageFilm: Creating backup of previously saved film to: \"" << filmPathBackup << "\"" << yendl;
-		try
-		{	
-			boost::filesystem::rename(filmPath, filmPathBackup);
-		}
-		catch(const boost::filesystem::filesystem_error& e)
-		{
-			Y_WARNING << "imageFilm: error during imageFilm file backup \"" << e.what() << "\"" << yendl;
-		}
-	}
-	
-	if(pbar) pbar->setTag(oldTag);
-}
-
-void imageFilm_t::imageFilmUpdateCheckInfo()
-{
-	filmload_check.filmStructureVersion = FILM_STRUCTURE_VERSION;
-	filmload_check.w = w;
-	filmload_check.h = h;
-	filmload_check.cx0 = cx0;
-	filmload_check.cx1 = cx1;
-	filmload_check.cy0 = cy0;
-	filmload_check.cy1 = cy1;
-	filmload_check.numPasses = imagePasses.size();
-}
-
-bool imageFilm_t::imageFilmLoadCheckOk() const
-{
-	bool checksOK = true;
-	
-	if(filmload_check.filmStructureVersion != FILM_STRUCTURE_VERSION)
-	{
-		checksOK = false;
-		Y_WARNING << "imageFilm: loading/reusing film check failed. Film structure version, expected=" << FILM_STRUCTURE_VERSION << ", in reused/loaded film=" << filmload_check.filmStructureVersion << yendl;
-	}	
-	if(filmload_check.w != w)
-	{
-		checksOK = false;
-		Y_WARNING << "imageFilm: loading/reusing film check failed. Image width, expected=" << w << ", in reused/loaded film=" << filmload_check.w << yendl;
-	}
-	if(filmload_check.h != h)
-	{
-		checksOK = false;
-		Y_WARNING << "imageFilm: loading/reusing film check failed. Image height, expected=" << h << ", in reused/loaded film=" << filmload_check.h << yendl;
-	}
-	if(filmload_check.cx0 != cx0)
-	{
-		checksOK = false;
-		Y_WARNING << "imageFilm: loading/reusing film check failed. Border cx0, expected=" << cx0 << ", in reused/loaded film=" << filmload_check.cx0 << yendl;
-	}
-	if(filmload_check.cx1 != cx1)
-	{
-		checksOK = false;
-		Y_WARNING << "imageFilm: loading/reusing film check failed. Border cx1, expected=" << cx1 << ", in reused/loaded film=" << filmload_check.cx1 << yendl;
-	}
-	if(filmload_check.cy0 != cy0)
-	{
-		checksOK = false;
-		Y_WARNING << "imageFilm: loading/reusing film check failed. Border cy0, expected=" << cy0 << ", in reused/loaded film=" << filmload_check.cy0 << yendl;
-	}
-	if(filmload_check.cy1 != cy1)
-	{
-		checksOK = false;
-		Y_WARNING << "imageFilm: loading/reusing film check failed. Border cy1, expected=" << cy1 << ", in reused/loaded film=" << filmload_check.cy1 << yendl;
-	}
-	if(filmload_check.numPasses != (size_t) env->getRenderPasses()->extPassesSize())
-	{
-		checksOK = false;
-		Y_WARNING << "imageFilm: loading/reusing film check failed. Number of render passes, expected=" << env->getRenderPasses()->extPassesSize() << ", in reused/loaded film=" << filmload_check.numPasses << yendl;
-	}
-	
-	if(!checksOK) Y_WARNING << "imageFilm: loading/reusing film failed because parameters are different. The film will be re-generated." << yendl;
-	
-	Y_DEBUG << "imageFilm: loading/reusing film check results=" << checksOK << ". Expected: film structure version=" << FILM_STRUCTURE_VERSION << ",w="<<w<<",h="<<h<<",cx="<<cx0<<",cy0="<<cy0<<",cx1="<<cx1<<",cy1="<<cy1<<",numPasses="<<env->getRenderPasses()->extPassesSize()<<" .In Image File: film structure version="<<filmload_check.filmStructureVersion<<",w="<<filmload_check.w<<",h="<<filmload_check.h<<",cx="<<filmload_check.cx0<<",cy0="<<filmload_check.cy0<<",cx1="<<filmload_check.cx1<<",cy1="<<filmload_check.cy1<<",numPasses="<<filmload_check.numPasses << yendl;
-	
-	return checksOK;
-}
-
 
 __END_YAFRAY

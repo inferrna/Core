@@ -52,7 +52,7 @@ class YAFRAYPLUGIN_EXPORT EmissionIntegrator : public volumeIntegrator_t
 	}
 	
 	// emission part
-	virtual colorA_t integrate(renderState_t &state, ray_t &ray, colorPasses_t &colorPasses, int additionalDepth /*=0*/) const
+	virtual colorA_t integrate(renderState_t &state, ray_t &ray) const
 	{
 		float t0 = 0.f, t1 = 0.f;
 		int N = 10; // samples + 1 on the ray inside the volume

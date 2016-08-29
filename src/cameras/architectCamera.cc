@@ -26,8 +26,8 @@
 __BEGIN_YAFRAY
 
 architectCam_t::architectCam_t(const point3d_t &pos, const point3d_t &look, const point3d_t &up,
-		int _resx, int _resy, float aspect,
-        float df, float ap, float dofd, bokehType bt, bkhBiasType bbt, float bro, float const near_clip_distance, float const far_clip_distance)
+		int _resx, int _resy, PFLOAT aspect,
+        PFLOAT df, PFLOAT ap, PFLOAT dofd, bokehType bt, bkhBiasType bbt, PFLOAT bro, float const near_clip_distance, float const far_clip_distance)
         :perspectiveCam_t(pos, look, up, _resx, _resy, aspect, df, ap, dofd, bt, bbt, bro, near_clip_distance, far_clip_distance)
 {
 	// Initialize camera specific plane coordinates
@@ -35,7 +35,7 @@ architectCam_t::architectCam_t(const point3d_t &pos, const point3d_t &look, cons
 
 	int ns = (int)bkhtype;
 	if ((ns>=3) && (ns<=6)) {
-		float w=degToRad(bro), wi=(M_2PI)/(float)ns;
+		PFLOAT w=degToRad(bro), wi=(M_2PI)/(PFLOAT)ns;
 		ns = (ns+2)*2;
 		LS.resize(ns);
 		for (int i=0;i<ns;i+=2) {
@@ -62,8 +62,8 @@ void architectCam_t::setAxis(const vector3d_t &vx, const vector3d_t &vy, const v
 	vright = camX;
 	vup = aspect_ratio * vector3d_t(0, 0, -1);
 	vto = (camZ * focal_distance) - 0.5 * (vup + vright);
-	vup /= (float)resy;
-	vright /= (float)resx;
+	vup /= (PFLOAT)resy;
+	vright /= (PFLOAT)resx;
 }
 
 point3d_t architectCam_t::screenproject(const point3d_t &p) const
@@ -77,13 +77,13 @@ point3d_t architectCam_t::screenproject(const point3d_t &p) const
 	vector3d_t camz = camy ^ camX;
 	vector3d_t camx = camz ^ camy;
 	
-	float dx = dir * camx;
-	float dy = dir * camY;
-	float dz = dir * camz;
+	PFLOAT dx = dir * camx;
+	PFLOAT dy = dir * camY;
+	PFLOAT dz = dir * camz;
 	
 	s.y = 2 * dy * focal_distance / (dz * aspect_ratio);
 	// Needs focal_distance correction
-	float fod = (focal_distance) * camy * camY / (camx * camX);
+	PFLOAT fod = (focal_distance) * camy * camY / (camx * camX);
 	s.x = 2 * dx * fod / dz;
 	s.z = 0;
 	
@@ -98,7 +98,6 @@ camera_t* architectCam_t::factory(paraMap_t &params, renderEnvironment_t &render
 	int resx=320, resy=200;
 	float aspect=1, dfocal=1, apt=0, dofd=0, bkhrot=0;
     float nearClip = 0.0f, farClip = -1.0f;
-    std::string viewName = "";
 
 	params.getParam("from", from);
 	params.getParam("to", to);
@@ -114,7 +113,6 @@ camera_t* architectCam_t::factory(paraMap_t &params, renderEnvironment_t &render
 	params.getParam("aspect_ratio", aspect);
     params.getParam("nearClip", nearClip);
     params.getParam("farClip", farClip);
-    params.getParam("view_name", viewName);
 
 	bokehType bt = BK_DISK1;
 	if (*bkhtype=="disk2")			bt = BK_DISK2;
@@ -128,8 +126,6 @@ camera_t* architectCam_t::factory(paraMap_t &params, renderEnvironment_t &render
 	if (*bkhbias=="center") 		bbt = BB_CENTER;
 	else if (*bkhbias=="edge") 		bbt = BB_EDGE;
     architectCam_t* cam = new architectCam_t(from, to, up, resx, resy, aspect, dfocal, apt, dofd, bt, bbt, bkhrot, nearClip, farClip);
-
-	cam->view_name = viewName;
 
     return cam;
 }
