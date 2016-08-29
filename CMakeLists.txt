@@ -6,6 +6,7 @@ set(CMAKE_COLOR_MAKEFILE ON)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
    
 ####### Options ########
+option(WITH_Pthreads "Build with POSIX threads wrapper on windows platforms" OFF)
 option(WITH_Freetype "Build font rendering with FreeType" ON)
 option(WITH_OpenEXR "Build OpenEXR image I/O plugin" ON)
 option(WITH_JPEG "Build JPEG image I/O plugin" ON)
@@ -18,13 +19,12 @@ option(WITH_YAF_RUBY_BINDINGS "Enable the Ruby bindings" OFF)
 option(WITH_OSX_ADDON "Enable the use of blender's included python lib on OSX platforms" OFF)
 option(BUILDRELEASE "Enable release mode building" OFF)
 option(DEBUG_BUILD "Enable debug build mode" OFF)
+option(EMBED_FONT_QT "Embed font for QT GUI (usefull for some buggy QT installations)" OFF)
 option(FAST_MATH "Enable mathematic approximations to make code faster" ON)
 option(FAST_TRIG "Enable trigonometric approximations to make code faster" ON)
 option(WITH_OpenMP "Enable OpenMP parallel processing optimization" ON)
 
 ###### Packages and Definitions #########
-
-SET(CMAKE_OSX_SYSROOT "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.11.sdk")
 
 # Load user configurations if available
 include(CMakeConfig/UserConfig.txt OPTIONAL)
@@ -58,6 +58,10 @@ endif(YAF_USER_LIBRARY_DIRS)
 
 SET(YAF_PROGRAM_PATH "")
 
+if(YAF_USER_QT_BIN_DIR)
+	SET(CMAKE_PROGRAM_PATH ${YAF_USER_QT_BIN_DIR} CACHE STRING "Executables search directories" FORCE)
+endif(YAF_USER_QT_BIN_DIR)
+
 if(YAF_USER_SWIG_BIN_DIR)
 	UNSET(SWIG_EXECUTABLE CACHE)
 	UNSET(SWIG_FOUND CACHE)
@@ -69,12 +73,6 @@ if(YAF_USER_EXTRA_LIBS)
 endif(YAF_USER_EXTRA_LIBS)
 
 # find the required libs
-FIND_PACKAGE(Boost COMPONENTS system filesystem serialization locale REQUIRED)
-INCLUDE_DIRECTORIES( ${Boost_INCLUDE_DIR} )
-
-FIND_PACKAGE(OpenCV COMPONENTS core imgproc photo REQUIRED)
-INCLUDE_DIRECTORIES( ${OpenCV_INCLUDE_DIR} )
-
 find_package(ZLIB REQUIRED)
 find_package(LibXml2 REQUIRED)
 
@@ -85,11 +83,24 @@ else(LIBXML2_FOUND)
 	message("Using LibXML: no")
 endif(LIBXML2_FOUND)
 
-if(WIN32)
-	add_definitions(-DWIN32 )
-	add_definitions(-D_USE_MATH_DEFINES )
-	add_definitions(-D_hypot=hypot )
-endif(WIN32)
+find_package(Threads REQUIRED)
+
+# Find optional libs
+if(CMAKE_HAVE_PTHREAD_H)
+	if(WIN32)
+		if(WITH_Pthreads)
+			add_definitions(-DHAVE_PTHREAD)
+			message("Using Posix Threads: yes")
+		else(WITH_Pthreads)
+			message("Using Posix Threads: no (disabled by user)")
+		endif(WITH_Pthreads)
+	else(WIN32)
+		add_definitions(-DHAVE_PTHREAD)
+		message("Using Posix Threads: yes")
+	endif(WIN32)
+else(CMAKE_HAVE_PTHREAD_H)
+	message("Using Posix Threads: no (not found)")
+endif(CMAKE_HAVE_PTHREAD_H)
 
 if(WITH_Freetype)
 	find_package(Freetype REQUIRED)
@@ -225,13 +236,13 @@ if(NOT WIN32)
 	if(USER_RELEASE_OPTIMIZATION_FLAGS)
 		set(YAF_CXX_FLAGS_RELEASE ${USER_RELEASE_OPTIMIZATION_FLAGS})
 	else(USER_RELEASE_OPTIMIZATION_FLAGS)
-		set(YAF_CXX_FLAGS_RELEASE "-std=c++11 -O3 -ffast-math")
+		set(YAF_CXX_FLAGS_RELEASE "-O3 -ffast-math")
 	endif(USER_RELEASE_OPTIMIZATION_FLAGS)
 	
 	if(USER_DEBUG_OPTIMIZATION_FLAGS)
 		set(YAF_CXX_FLAGS_DEBUG ${USER_DEBUG_OPTIMIZATION_FLAGS})
 	else(USER_DEBUG_OPTIMIZATION_FLAGS)
-		set(YAF_CXX_FLAGS_DEBUG "-std=c++11 -ggdb")
+		set(YAF_CXX_FLAGS_DEBUG "-ggdb")
 	endif(USER_DEBUG_OPTIMIZATION_FLAGS)
 	
 	if(APPLE)
@@ -249,13 +260,13 @@ else(NOT WIN32)
 		if(USER_RELEASE_OPTIMIZATION_FLAGS)
 			set(YAF_CXX_FLAGS_RELEASE ${USER_RELEASE_OPTIMIZATION_FLAGS})
 		else(USER_RELEASE_OPTIMIZATION_FLAGS)
-			set(YAF_CXX_FLAGS_RELEASE "-std=c++11 -O3 -ffast-math")
+			set(YAF_CXX_FLAGS_RELEASE "-O3 -ffast-math")
 		endif(USER_RELEASE_OPTIMIZATION_FLAGS)
 		
 		if(USER_DEBUG_OPTIMIZATION_FLAGS)
 			set(YAF_CXX_FLAGS_DEBUG ${USER_DEBUG_OPTIMIZATION_FLAGS})
 		else(USER_DEBUG_OPTIMIZATION_FLAGS)
-			set(YAF_CXX_FLAGS_DEBUG "-std=c++11 -ggdb")
+			set(YAF_CXX_FLAGS_DEBUG "-ggdb")
 		endif(USER_DEBUG_OPTIMIZATION_FLAGS)
 
 	else(MINGW)
