@@ -62,12 +62,8 @@ void layerNode_t::eval(nodeStack_t &stack, const renderState_t &state, const sur
 	{
 		if(!TEX_RGB)	texcolor = default_col;
 		else			Tin = Ta;
-        
-        float Tin_truncated_range;
-        
-        if(Tin>1.f) Tin_truncated_range=1.f;
-        else if(Tin<0.f) Tin_truncated_range=0.f;
-        else Tin_truncated_range = Tin;
+		// check good range value
+		Tin = inRange(1.f, 0.f, Tin);
 		
 		rcol = texture_rgb_blend(texcolor, rcol, Tin_truncated_range, stencilTin * colfac, mode);
 		rcol.clampRGB0();
@@ -89,7 +85,7 @@ void layerNode_t::eval(nodeStack_t &stack, const renderState_t &state, const sur
 			}
 		}
 		
-		rval = texture_value_blend(default_val, rval, Tin, stencilTin * valfac, mode);
+		rval = texture_value_blend(default_val, rval, Tin, stencilTin * valfac, mode, (!do_scalar));// do_scalar < 0)); // povman test for silent build warning
 		if(rval<0.f) rval=0.f;
 	}
 	rcol.A = stencilTin;

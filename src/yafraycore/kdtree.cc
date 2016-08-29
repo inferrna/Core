@@ -1,3 +1,19 @@
+/****************************************************************************
+*
+*    This library is free software; you can redistribute it and/or
+*    modify it under the terms of the GNU Lesser General Public
+*    License as published by the Free Software Foundation; either
+*    version 2.1 of the License, or (at your option) any later version.
+*
+*    This library is distributed in the hope that it will be useful,
+*    but WITHOUT ANY WARRANTY; without even the implied warranty of
+*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+*    Lesser General Public License for more details.
+*
+*    You should have received a copy of the GNU Lesser General Public
+*    License along with this library; if not, write to the Free Software
+*    Foundation,Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+*/
 // search for "todo" and "IMPLEMENT" and "<<" or ">>"...
 
 #include <yafraycore/kdtree.h>
@@ -23,6 +39,7 @@ __BEGIN_YAFRAY
 
 #define KD_MAX_STACK 64
 
+/*
 #if (defined(_M_IX86) || defined(i386) || defined(_X86_))
 	#define Y_FAST_INT 1
 #else
@@ -49,6 +66,7 @@ inline int Y_Float2Int(double val) {
 	return (int)val;
 #endif
 }
+*/
 
 int Kd_inodes=0, Kd_leaves=0, _emptyKd_leaves=0, Kd_prims=0, _clip=0, _bad_clip=0, _null_clip=0, _early_out=0;
 

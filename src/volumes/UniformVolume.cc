@@ -1,3 +1,23 @@
+/**
+ *	This file is part of the yafray package
+ *  Copyright (C) 2002  Alejandro Conty Estévez
+ *
+ *  This library is free software; you can redistribute it and/or
+ *  modify it under the terms of the GNU Lesser General Public
+ *  License as published by the Free Software Foundation; either
+ *  version 2.1 of the License, or (at your option) any later version.
+ *
+ *  This library is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this library; if not, write to the Free Software
+ *  Foundation,Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ *
+ */
+
 #include <core_api/ray.h>
 #include <core_api/color.h>
 #include <core_api/volume.h>
@@ -13,17 +33,17 @@ struct pSample_t;
 
 class UniformVolume : public VolumeRegion {
 	public:
-	
+
 		UniformVolume(color_t sa, color_t ss, color_t le, float gg, point3d_t pmin, point3d_t pmax, int attgridScale) :
 			VolumeRegion(sa, ss, le, gg, pmin, pmax, attgridScale) {
 			Y_VERBOSE << "UniformVolume: Vol.[" << s_a << ", " << s_s << ", " << l_e << ", " << pmin << ", " << pmax << ", " << attgridScale << "]" << yendl;
 		}
-	
+
 		virtual color_t sigma_a(const point3d_t &p, const vector3d_t &v);
 		virtual color_t sigma_s(const point3d_t &p, const vector3d_t &v);
 		virtual color_t emission(const point3d_t &p, const vector3d_t &v);
 		virtual color_t tau(const ray_t &ray, float step, float offset);
-				
+
 		static VolumeRegion* factory(paraMap_t &params, renderEnvironment_t &render);
 };
 
@@ -48,22 +68,22 @@ color_t UniformVolume::sigma_s(const point3d_t &p, const vector3d_t &v) {
 
 color_t UniformVolume::tau(const ray_t &ray, float step, float offset) {
 	float t0 = -1, t1 = -1;
-	
+
 	// ray doesn't hit the BB
 	if (!intersect(ray, t0, t1)) {
 		return color_t(0.f);
 	}
-	
+
 	if (ray.tmax < t0 && ! (ray.tmax < 0)) return color_t(0.f);
-	
+
 	if (ray.tmax < t1 && ! (ray.tmax < 0)) t1 = ray.tmax;
-	
+
 	// t0 < 0 means, ray.from is in the volume
 	if (t0 < 0.f) t0 = 0.f;
-	
+
 	// distance travelled in the volume
 	float dist = t1 - t0;
-	
+
 	return dist * (s_s + s_a);
 }
 
@@ -85,7 +105,7 @@ VolumeRegion* UniformVolume::factory(paraMap_t &params,renderEnvironment_t &rend
 	float min[] = {0, 0, 0};
 	float max[] = {0, 0, 0};
 	int attSc = 5;
-	
+
 	params.getParam("sigma_s", ss);
 	params.getParam("sigma_a", sa);
 	params.getParam("l_e", le);
@@ -104,7 +124,7 @@ VolumeRegion* UniformVolume::factory(paraMap_t &params,renderEnvironment_t &rend
 }
 
 extern "C"
-{	
+{
 	YAFRAYPLUGIN_EXPORT void registerPlugin(renderEnvironment_t &render)
 	{
 		render.registerFactory("UniformVolume", UniformVolume::factory);

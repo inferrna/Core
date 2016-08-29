@@ -303,8 +303,8 @@ shaderNode_t* textureMapper_t::factory(const paraMap_t &params,renderEnvironment
 	tex = render.getTexture(*texname);
 	if(!tex)
 	{
-		Y_ERROR << "TextureMapper: texture '" << texname << "' does not exist!" << yendl;
-		return nullptr;
+		Y_ERROR << "TextureMapper: texture '" << *texname << "' does not exist!" << yendl;
+		return 0;
 	}
 	textureMapper_t *tm = new textureMapper_t(tex);
 	if(params.getParam("texco", option) )

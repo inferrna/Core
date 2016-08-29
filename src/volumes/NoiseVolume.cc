@@ -1,3 +1,23 @@
+/**
+ *	This file is part of the yafray package
+ *  Copyright (C) 2002  Alejandro Conty Estévez
+ *
+ *  This library is free software; you can redistribute it and/or
+ *  modify it under the terms of the GNU Lesser General Public
+ *  License as published by the Free Software Foundation; either
+ *  version 2.1 of the License, or (at your option) any later version.
+ *
+ *  This library is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this library; if not, write to the Free Software
+ *  Foundation,Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ *
+ */
+
 #include <yafray_config.h>
 
 #include <core_api/ray.h>
@@ -17,36 +37,39 @@ __BEGIN_YAFRAY
 struct renderState_t;
 struct pSample_t;
 
-class NoiseVolume : public DensityVolume {
-	public:
-	
-		NoiseVolume(color_t sa, color_t ss, color_t le, float gg, float cov, float sharp, float dens,
-				point3d_t pmin, point3d_t pmax, int attgridScale, texture_t* noise) :
-			DensityVolume(sa, ss, le, gg, pmin, pmax, attgridScale) {
-			texDistNoise = noise;
-			cover = cov;
-			sharpness = sharp * sharp;
-			density = dens;
-		}
-		
-		virtual float Density(point3d_t p);
-				
-		static VolumeRegion* factory(paraMap_t &params, renderEnvironment_t &render);
-	
-	protected:
+class NoiseVolume : public DensityVolume
+{
+public:
 
-		texture_t* texDistNoise;
-		float cover;
-		float sharpness;
-		float density;
+	NoiseVolume(color_t sa, color_t ss, color_t le, float gg, float cov, float sharp, float dens,
+	            point3d_t pmin, point3d_t pmax, int attgridScale, texture_t* noise) :
+		DensityVolume(sa, ss, le, gg, pmin, pmax, attgridScale)
+	{
+		texDistNoise = noise;
+		cover = cov;
+		sharpness = sharp * sharp;
+		density = dens;
+	}
+
+	virtual float Density(point3d_t p);
+
+	static VolumeRegion* factory(paraMap_t &params, renderEnvironment_t &render);
+
+protected:
+
+	texture_t* texDistNoise;
+	float cover;
+	float sharpness;
+	float density;
 };
 
-float NoiseVolume::Density(const point3d_t p) {
+float NoiseVolume::Density(const point3d_t p)
+{
 	float d = texDistNoise->getColor(p * 0.1f).energy();
 
 	d = 1.0f / (1.0f + fExp(sharpness * (1.0f - cover - d)));
 	d *= density;
-	
+
 	return d;
 }
 
@@ -62,8 +85,8 @@ VolumeRegion* NoiseVolume::factory(paraMap_t &params,renderEnvironment_t &render
 	float min[] = {0, 0, 0};
 	float max[] = {0, 0, 0};
 	int attSc = 1;
-	const std::string *texName = nullptr;
-	
+	const std::string *texName = 0;
+
 	params.getParam("sigma_s", ss);
 	params.getParam("sigma_a", sa);
 	params.getParam("l_e", le);
@@ -79,7 +102,7 @@ VolumeRegion* NoiseVolume::factory(paraMap_t &params,renderEnvironment_t &render
 	params.getParam("maxZ", max[2]);
 	params.getParam("attgridScale", attSc);
 	params.getParam("texture", texName);
-	
+
 	if (!texName)
 	{
 		Y_VERBOSE << "NoiseVolume: Noise texture not set, the volume region won't be created." << yendl;
@@ -93,14 +116,14 @@ VolumeRegion* NoiseVolume::factory(paraMap_t &params,renderEnvironment_t &render
 		Y_VERBOSE << "NoiseVolume: Noise texture '" << *texName << "' couldn't be found, the volume region won't be created." << yendl;
 		return nullptr;
 	}
-		
+
 	NoiseVolume *vol = new NoiseVolume(color_t(sa), color_t(ss), color_t(le), g, cov, sharp, dens,
 						point3d_t(min[0], min[1], min[2]), point3d_t(max[0], max[1], max[2]), attSc, noise);
 	return vol;
 }
 
 extern "C"
-{	
+{
 	YAFRAYPLUGIN_EXPORT void registerPlugin(renderEnvironment_t &render)
 	{
 		render.registerFactory("NoiseVolume", NoiseVolume::factory);

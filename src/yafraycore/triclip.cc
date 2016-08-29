@@ -1,5 +1,6 @@
 /*
 Sutherland-Hodgman triangle clipping
+http://www.cs.drexel.edu/~david/Classes/CS430/Lectures/L-05_Polygons.6.pdf
 */
 #include<yafray_config.h>
 

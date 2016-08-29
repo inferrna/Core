@@ -25,6 +25,7 @@
 #include <yafray_config.h>
 
 #include <utilities/mathOptimizations.h>
+#include <utilities/math_utils.h>
 #include <iostream>
 
 #include <boost/serialization/nvp.hpp>
@@ -89,16 +90,8 @@ class YAFRAYCORE_EXPORT vector3d_t
 		vector3d_t& operator *=(float s) { x*=s;  y*=s;  z*=s;  return *this;}
 		float operator[] (int i) const{ return (&x)[i]; } //Lynx
 		void abs() { x=std::fabs(x);  y=std::fabs(y);  z=std::fabs(z); }
-		~vector3d_t() {};
-		float x,y,z;
-
-		friend class boost::serialization::access;
-		template<class Archive> void serialize(Archive & ar, const unsigned int version)
-		{
-			ar & BOOST_SERIALIZATION_NVP(x);
-			ar & BOOST_SERIALIZATION_NVP(y);
-			ar & BOOST_SERIALIZATION_NVP(z);
-		}
+		//~vector3d_t() {}; // povman test
+		PFLOAT x,y,z;
 };
 
 class YAFRAYCORE_EXPORT normal_t
@@ -135,18 +128,10 @@ class YAFRAYCORE_EXPORT point3d_t
 		point3d_t& operator +=(float s) { x+=s;  y+=s;  z+=s;  return *this;}
 		point3d_t& operator +=(const point3d_t &s) { x+=s.x;  y+=s.y;  z+=s.z;  return *this;}
 		point3d_t& operator -=(const point3d_t &s) { x-=s.x;  y-=s.y;  z-=s.z;  return *this;}
-		float operator[] (int i) const{ return (&x)[i]; } //Lynx
-		float &operator[](int i) { return (&x)[i]; } //Lynx
-		~point3d_t() {};
-		float x,y,z;
-
-		friend class boost::serialization::access;
-		template<class Archive> void serialize(Archive & ar, const unsigned int version)
-		{
-			ar & BOOST_SERIALIZATION_NVP(x);
-			ar & BOOST_SERIALIZATION_NVP(y);
-			ar & BOOST_SERIALIZATION_NVP(z);
-		}
+		PFLOAT operator[] (int i) const{ return (&x)[i]; } //Lynx
+		PFLOAT &operator[](int i) { return (&x)[i]; } //Lynx
+		//~point3d_t() {}; // povman: add but not activate yet
+		PFLOAT x,y,z;
 };
 
 
@@ -277,14 +262,11 @@ inline vector3d_t& vector3d_t::normalize()
 	return *this;
 }
 
-
 inline float vector3d_t::sinFromVectors(const vector3d_t& v)
 {
     float div = ( length() * v.length() ) * 0.99999f + 0.00001f;
-    float asin_argument =  ( (*this ^ v ).length() / div) * 0.99999f;
-    //Fix to avoid black "nan" areas when this argument goes slightly over +1.0. Why that happens in the first place, maybe floating point rounding errors?
-    if(asin_argument > 1.f) asin_argument = 1.f;
-    return asin(asin_argument);
+    float ret = ( (*this ^ v ).length() / div) * 0.99999f ;
+    return asin(inRange(1.f, -1.f, ret));
 }
 
 inline normal_t& normal_t::normalize()
@@ -406,6 +388,17 @@ inline vector3d_t RandomSpherical()
 	else v.z = 1.0;
 	return v;
 }
+// povman: add for SSS
+inline GFLOAT dot( const normal_t &a, const normal_t &b)
+{
+	return (a.x*b.x+a.y*b.y+a.z*b.z);
+}
+
+inline GFLOAT dot( const vector3d_t &a, const vector3d_t &b)
+{
+	return (a.x*b.x+a.y*b.y+a.z*b.z);
+}
+// end
 
 YAFRAYCORE_EXPORT vector3d_t randomVectorCone(const vector3d_t &D, const vector3d_t &U, const vector3d_t &V,
 						float cosang, float z1, float z2);

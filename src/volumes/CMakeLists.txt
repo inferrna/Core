@@ -17,5 +17,5 @@ target_link_libraries(GridVolume yafaray_v3_core)
 add_library(SkyVolume SHARED SkyVolume.cc)
 target_link_libraries(SkyVolume yafaray_v3_core)
 
-install (TARGETS UniformVolume ExpDensityVolume NoiseVolume SkyVolume
+install (TARGETS UniformVolume ExpDensityVolume NoiseVolume SkyVolume GridVolume
 		${YAF_TARGET_TYPE} DESTINATION ${YAF_PLUGIN_DIR})

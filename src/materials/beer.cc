@@ -9,19 +9,15 @@ __BEGIN_YAFRAY
 
 class beer_t: public volumeHandler_t
 {
-	public:
-		beer_t(const color_t &sigma): sigma_a(sigma) {};
-		beer_t(const color_t &acol, double dist);
-		virtual bool transmittance(const renderState_t &state, const ray_t &ray, color_t &col) const;
-		virtual bool scatter(const renderState_t &state, const ray_t &ray, ray_t &sRay, pSample_t &s) const;
-        virtual color_t getSubSurfaceColor(const renderState_t &state) const
-        {
-                return sigma_a;
-        }
+public:
+	beer_t(const color_t &sigma): sigma_a(sigma) {};
+	beer_t(const color_t &acol, double dist);
+	virtual bool transmittance(const renderState_t &state, const ray_t &ray, color_t &col) const;
+	virtual bool scatter(const renderState_t &state, const ray_t &ray, ray_t &sRay, pSample_t &s) const;
 		
-		static volumeHandler_t* factory(const paraMap_t &params, renderEnvironment_t &env);
-	protected:
-		color_t sigma_a;
+	static volumeHandler_t* factory(const paraMap_t &params, renderEnvironment_t &env);
+protected:
+	color_t sigma_a;
 };
 
 
@@ -65,15 +61,15 @@ volumeHandler_t* beer_t::factory(const paraMap_t &params, renderEnvironment_t &e
 
 class sss_t: public beer_t
 {
-	public:
-		sss_t(const color_t &a_col, const color_t &s_col, double dist);
-		//virtual bool transmittance(const renderState_t &state, const ray_t &ray, color_t &col) const { return false; };
-		virtual bool scatter(const renderState_t &state, const ray_t &ray, ray_t &sRay, pSample_t &s) const;
+public:
+	sss_t(const color_t &a_col, const color_t &s_col, double dist);
+	//virtual bool transmittance(const renderState_t &state, const ray_t &ray, color_t &col) const { return false; };
+	virtual bool scatter(const renderState_t &state, const ray_t &ray, ray_t &sRay, pSample_t &s) const;
 	
-		static volumeHandler_t* factory(const paraMap_t &params, renderEnvironment_t &env);
-	protected:
-		float dist_s;
-		color_t scatter_col;
+	static volumeHandler_t* factory(const paraMap_t &params, renderEnvironment_t &env);
+protected:
+	PFLOAT dist_s;
+	color_t scatter_col;
 };
 
 sss_t::sss_t(const color_t &a_col, const color_t &s_col, double dist):

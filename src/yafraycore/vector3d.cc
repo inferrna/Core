@@ -112,31 +112,32 @@ void fresnel(const vector3d_t & I, const vector3d_t & n, float IOR, float &Kr, f
 	float eta;
 	vector3d_t N;
 
-	if((I*n)<0)
-	{
+	if((I*n)<0) {
 		//eta=1.0/IOR;
 		eta=IOR;
 		N=-n;
-	}
-	else
-	{
+	} else {
 		eta=IOR;
 		N=n;
 	}
-	float c=I*N;
-	float g=eta*eta+c*c-1;
-	if(g<=0)
+	PFLOAT c=I*N;
+	PFLOAT g = eta * eta + c * c - 1;
+    if(g <= 0){
 		g=0;
-	else
-		g=fSqrt(g);
-	float aux=c*(g+c);
+    } else {
+		g = fSqrt(g);
+    }
+    //
+	PFLOAT aux=c*(g+c);
 
 	Kr=( ( 0.5*(g-c)*(g-c) )/( (g+c)*(g+c) ) ) *
-		   ( 1+ ((aux-1)*(aux-1))/( (aux+1)*(aux+1) ) );
-	if(Kr<1.0)
+        ( 1+ ((aux-1)*(aux-1))/( (aux+1)*(aux+1) ) );
+    //-
+    if(Kr<1.0){
 		Kt=1-Kr;
-	else
+    } else {
 		Kt=0;
+    }
 }
 
 
@@ -159,23 +160,21 @@ void ShirleyDisk(float r1, float r2, float &u, float &v)
 		if (a>b) {	// Reg.1
 			r = a;
 			phi = M_PI_4 * (b/a);
-		}
-		else {			// Reg.2
+		} else {	// Reg.2
 			r = b;
 			phi = M_PI_4 * (2 - a/b);
 		}
-	}
-	else {
+	} else {
 		if (a<b) {	// Reg.3
 			r = -a;
 			phi = M_PI_4 * (4 + b/a);
-		}
-		else {			// Reg.4
+		} else {	// Reg.4
 			r = -b;
-			if (b!=0)
+            if (b!=0){
 				phi = M_PI_4 * (6 - a/b);
-			else
+            } else {
 				phi = 0;
+            }
 		}
 	}
 	u = r * fCos(phi);
@@ -183,12 +182,9 @@ void ShirleyDisk(float r1, float r2, float &u, float &v)
 }
 
 
-
 YAFRAYCORE_EXPORT int myseed=123212;
 
-vector3d_t randomVectorCone(const vector3d_t &D,
-				const vector3d_t &U, const vector3d_t &V,
-				float cosang, float z1, float z2)
+vector3d_t randomVectorCone(const vector3d_t &D, const vector3d_t &U, const vector3d_t &V, PFLOAT cosang, PFLOAT z1, PFLOAT z2)
 {
   float t1=M_2PI*z1, t2=1.0-(1.0-cosang)*z2;
   return (U*fCos(t1) + V*fSin(t1))*fSqrt(1.0-t2*t2) + D*t2;

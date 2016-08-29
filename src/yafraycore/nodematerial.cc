@@ -1,3 +1,20 @@
+/****************************************************************************
+ *
+ *    This library is free software; you can redistribute it and/or
+ *    modify it under the terms of the GNU Lesser General Public
+ *    License as published by the Free Software Foundation; either
+ *    version 2.1 of the License, or (at your option) any later version.
+ *
+ *    This library is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *    Lesser General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Lesser General Public
+ *    License along with this library; if not, write to the Free Software
+ *    Foundation,Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ */
+
 #include <yafraycore/nodematerial.h>
 #include <core_api/environment.h>
 #include <set>
@@ -9,7 +26,7 @@ class YAFRAYCORE_EXPORT sNodeFinder_t: public nodeFinder_t
 	public:
 		sNodeFinder_t(const std::map<std::string,shaderNode_t *> &table): node_table(table) {}
 		virtual const shaderNode_t* operator()(const std::string &name) const;
-		
+
 		virtual ~sNodeFinder_t(){};
 	protected:
 		const std::map<std::string,shaderNode_t *> &node_table;
@@ -63,7 +80,7 @@ void nodeMaterial_t::solveNodesOrder(const std::vector<shaderNode_t *> &roots)
 	for(unsigned int i=0; i<allNodes.size(); ++i) allNodes[i]->ID=0;
 	for(unsigned int i=0; i<roots.size(); ++i) recursiveSolver(roots[i], allSorted);
 	if(allNodes.size() != allSorted.size()) Y_WARNING << "NodeMaterial: Unreachable nodes!" << yendl;
-	//give the nodes an index to be used as the "stack"-index. 
+	//give the nodes an index to be used as the "stack"-index.
 	//using the order of evaluation can't hurt, can it?
 	for(unsigned int i=0; i<allSorted.size(); ++i)
 	{
@@ -119,8 +136,8 @@ bool nodeMaterial_t::loadNodes(const std::list<paraMap_t> &paramsList, renderEnv
     const std::string *name=0;
     const std::string *element=0;
 
-	auto i=paramsList.begin();
-	
+	std::list<paraMap_t>::const_iterator i=paramsList.begin();
+
 	for(; i!=paramsList.end(); ++i)
 	{
 		if( i->getParam("element", element))
@@ -128,31 +145,31 @@ bool nodeMaterial_t::loadNodes(const std::list<paraMap_t> &paramsList, renderEnv
 			if(*element != "shader_node") continue;
 		}
 		else Y_WARNING << "NodeMaterial: No element type given; assuming shader node" << yendl;
-		
+
 		if(! i->getParam("name", name) )
 		{
 			Y_ERROR << "NodeMaterial: Name of shader node not specified!" << yendl;
 			error = true;
 			break;
 		}
-		
+
 		if(mShadersTable.find(*name) != mShadersTable.end() )
 		{
 			Y_ERROR << "NodeMaterial: Multiple nodes with identically names!" << yendl;
 			error = true;
 			break;
 		}
-		
+
 		if(! i->getParam("type", type) )
 		{
 			Y_ERROR << "NodeMaterial: Type of shader node not specified!" << yendl;
 			error = true;
 			break;
 		}
-		
+
 		renderEnvironment_t::shader_factory_t *fac = render.getShaderNodeFactory(*type);
 		shaderNode_t *shader=0;
-		
+
 		if(fac)
         {
             shader = fac(*i, render);
@@ -163,7 +180,7 @@ bool nodeMaterial_t::loadNodes(const std::list<paraMap_t> &paramsList, renderEnv
 			error = true;
 			break;
 		}
-		
+
 		if(shader)
 		{
 			mShadersTable[*name] = shader;
@@ -177,7 +194,7 @@ bool nodeMaterial_t::loadNodes(const std::list<paraMap_t> &paramsList, renderEnv
 			break;
 		}
 	}
-	
+
 	if(!error) //configure node inputs
 	{
 		sNodeFinder_t finder(mShadersTable);
@@ -191,14 +208,14 @@ bool nodeMaterial_t::loadNodes(const std::list<paraMap_t> &paramsList, renderEnv
 			}
 		}
 	}
-	
+
 	if(error)
 	{
 		//clear nodes map:
 		for(auto i=mShadersTable.begin();i!=mShadersTable.end();++i) delete i->second;
 		mShadersTable.clear();
 	}
-	
+
 	return !error;
 }
 
@@ -210,8 +227,8 @@ void nodeMaterial_t::parseNodes(const paraMap_t &params, std::vector<shaderNode_
     {
         if(params.getParam(currentNode->first, name))
         {
-            auto i = mShadersTable.find(*name);
-         
+            std::map<std::string,shaderNode_t *>::const_iterator i = mShadersTable.find(*name);
+
             if(i!=mShadersTable.end())
             {
                 currentNode->second = i->second;

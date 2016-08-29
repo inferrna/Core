@@ -265,7 +265,10 @@ bool tiledIntegrator_t::renderPass(int numView, int samples, int offset, bool ad
 	if(nthreads>1)
 	{
 		threadControl_t tc;
-		std::vector<std::thread> threads;
+		std::vector<renderWorker_t *> workers;
+		for (int i = 0; i < nthreads; ++i) {
+			workers.push_back(new renderWorker_t(this, scene, imageFilm, &tc, i, samples, offset, adaptive));
+		}
 		for(int i=0;i<nthreads;++i)
 		{
 			threads.push_back(std::thread(&tiledIntegrator_t::renderWorker, this, numView, this, scene, imageFilm, &tc, i, samples, (offset + imageFilm->getBaseSamplingOffset()), adaptive, AA_pass_number));
@@ -274,15 +277,22 @@ bool tiledIntegrator_t::renderPass(int numView, int samples, int offset, bool ad
 		std::unique_lock<std::mutex> lk(tc.m);
 		while(tc.finishedThreads < nthreads)
 		{
-			tc.c.wait(lk);
-			for(size_t i=0; i<tc.areas.size(); ++i)
-			{				
-				imageFilm->finishArea(numView, tc.areas[i]);
+			tc.countCV.wait();
+			for (size_t i = 0; i < tc.areas.size(); ++i)
+			{
+				imageFilm->finishArea(tc.areas[i]);
 			}
 			tc.areas.clear();
 		}
-
-		for(auto& t : threads) t.join();	//join all threads (although they probably have exited already, but not necessarily):
+		tc.countCV.unlock();
+		//join all threads (although they probably have exited already, but not necessarily):
+		//Fix for Linux hangs/crashes, it's better to wait for threads to end before deleting the thread objects. 
+		//Using code to wait for the threads to end in the destructors is not recommended.
+		for(int i=0;i<nthreads;++i)
+		{
+			workers[i]->wait(); 
+			delete workers[i];
+		}
 	}
 	else
 	{
@@ -395,10 +405,14 @@ bool tiledIntegrator_t::renderTile(int numView, renderArea_t &a, int n_samples, 
 				}
 				
 				c_ray.time = rstate.time;
+				c_ray.hasDifferentials = true;
+				// col = T * L_o + L_v
+				colorA_t col = integrate(rstate, c_ray); // L_o				
+				//col *= scene->volIntegrator->transmittance(rstate, c_ray); // T
+				//col += scene->volIntegrator->integrate(rstate, c_ray); // L_v
+				imageFilm->addSample(wt * col, j, i, dx, dy, &a);
 
-				colorPasses(PASS_INT_COMBINED) = integrate(rstate, c_ray, colorPasses);
-				
-				if(colorPasses.enabled(PASS_INT_Z_DEPTH_NORM) || colorPasses.enabled(PASS_INT_Z_DEPTH_ABS) || colorPasses.enabled(PASS_INT_MIST))
+				if(do_depth)
 				{
 					float depth_abs = 0.f, depth_norm = 0.f;
 

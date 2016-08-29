@@ -106,8 +106,8 @@ bool sphereLight_t::illumSample(const surfacePoint_t &sp, lSample_t &s, ray_t &w
 	if( photonOnly() ) return false;
 	
 	vector3d_t cdir = center - sp.P;
-	float dist_sqr = cdir.lengthSqr();
-	if(dist_sqr <= square_radius) return false; //only emit light on the outside!
+	PFLOAT dist_sqr = cdir.lengthSqr();
+    if(dist_sqr <= square_radius) return false; //only emit light on the outside!
 	
 	float dist = fSqrt(dist_sqr);
 	float idist_sqr = 1.f/(dist_sqr);
@@ -155,10 +155,10 @@ bool sphereLight_t::intersect(const ray_t &ray, float &t, color_t &col, float &i
 float sphereLight_t::illumPdf(const surfacePoint_t &sp, const surfacePoint_t &sp_light) const
 {
 	vector3d_t cdir = center - sp.P;
-	float dist_sqr = cdir.lengthSqr();
-	if(dist_sqr <= square_radius) return 0.f; //only emit light on the outside!
-	float idist_sqr = 1.f/(dist_sqr);
-	float cosAlpha = fSqrt(1.f - square_radius * idist_sqr);
+	PFLOAT dist_sqr = cdir.lengthSqr();
+    if(dist_sqr <= square_radius) return 0.f; //only emit light on the outside!
+    PFLOAT idist_sqr = 1.f/(dist_sqr);
+	PFLOAT cosAlpha = fSqrt(1.f - square_radius * idist_sqr);
 	return 1.f / (2.f * (1.f - cosAlpha));
 }
 
@@ -224,11 +224,7 @@ light_t *sphereLight_t::factory(paraMap_t &params,renderEnvironment_t &render)
 	sphereLight_t *light = new sphereLight_t(from, radius, color, power, samples, lightEnabled, castShadows);
 
 	light->objID = (unsigned int)object;
-	light->lShootCaustic = shootC;
-	light->lShootDiffuse = shootD;
-	light->lPhotonOnly = pOnly;
-
-	return light;
+    return light;
 }
 
 extern "C"

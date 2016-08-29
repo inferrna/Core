@@ -171,15 +171,16 @@ bool scene_t::endCurveMesh(const material_t *mat, float strandStart, float stran
 	vector3d_t N(0),u(0),v(0);
 	int n = points.size();
 	// Vertex extruding
-	for (i=0;i<n;i++){
+	for (i=0;i<n;i++)
+    {
 		o = points[i];
 		if (strandShape < 0)
 		{
-			r = strandStart + pow((float)i/(n-1) ,1+strandShape) * ( strandEnd - strandStart );
+			r = strandStart + pow((float)i/(n-1), 1+strandShape) * ( strandEnd - strandStart );
 		}
 		else
 		{
-			r = strandStart + (1 - pow(((float)(n-i-1))/(n-1) ,1-strandShape)) * ( strandEnd - strandStart );
+			r = strandStart + (1 - pow(((float)(n-i-1))/(n-1), 1-strandShape)) * ( strandEnd - strandStart );
 		}
 		// Last point keep previous tangent plane
 		if (i<n-1)

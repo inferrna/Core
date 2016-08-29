@@ -68,8 +68,7 @@ color_t material_t::getReflectivity(const renderState_t &state, const surfacePoi
 		total += col * W;
 	}
 	return total * 0.0625; //total / 16.f
-}
-		
+}		
 
 void material_t::applyBump(surfacePoint_t &sp, float dfdNU, float dfdNV) const
 {

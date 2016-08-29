@@ -144,7 +144,7 @@ const std::list<std::string> & listDir(const std::string &dir)
 
   _finddata_t    FindData;
   intptr_t       hFind;
-  int			 Result;
+  int            Result;
 
   hFind = _findfirst(pattern.c_str(), &FindData);
   if (hFind != -1)

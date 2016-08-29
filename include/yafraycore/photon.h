@@ -1,9 +1,27 @@
+/****************************************************************************
+ *      This library is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU Lesser General Public
+ *      License as published by the Free Software Foundation; either
+ *      version 2.1 of the License, or (at your option) any later version.
+ *
+ *      This library is distributed in the hope that it will be useful,
+ *      but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *      Lesser General Public License for more details.
+ *
+ *      You should have received a copy of the GNU Lesser General Public
+ *      License along with this library; if not, write to the Free Software
+ *      Foundation,Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ */
 
 #ifndef Y_PHOTONMAP_H
 #define Y_PHOTONMAP_H
 
 #include <yafray_config.h>
-
+// povman: photonkdtree.h is a more advanced code added for SSS translucent material..
+// contain an expanded code from pkdtree.h
+#include "photonkdtree.h"
+// end
 #include "pkdtree.h"
 #include <core_api/color.h>
 
@@ -44,7 +62,7 @@ class dirConverter_t
 			else if(p<0) p+=256;
 			return std::pair<unsigned char,unsigned char>(t,p);
 		}
-		
+
 	protected:
 		float cosphi[256];
 		float sinphi[256];
@@ -79,7 +97,7 @@ class photon_t
 		const point3d_t & position()const {return pos;};
 		const color_t color()const {return c;};
 		void color(const color_t &col) {c=col;};
-		vector3d_t direction()const 
+		vector3d_t direction()const
 		{
 #ifdef _SMALL_PHOTONS
 			if(theta==255) return vector3d_t(0,0,0);
@@ -102,7 +120,7 @@ class photon_t
 			dir=d;
 #endif
 		}
-	
+
 		point3d_t pos;
 #ifdef _SMALL_PHOTONS
 		rgbe_t c;
@@ -128,6 +146,11 @@ class photon_t
 			ar & BOOST_SERIALIZATION_NVP(dir);
 		}
 #endif
+        vector3d_t hitNormal;
+
+		// for photon inner sss object
+		point3d_t sourcePos;
+		float	  sourceDepth;
 };
 
 struct radData_t
@@ -153,47 +176,47 @@ struct foundPhoton_t
 
 class YAFRAYCORE_EXPORT photonMap_t
 {
-	public:
-		photonMap_t(): paths(0), updated(false), searchRadius(1.), tree(nullptr){ }
-		photonMap_t(const std::string &mapname, int threads): paths(0), updated(false), searchRadius(1.), tree(nullptr), name(mapname),threadsPKDtree(threads) { }
-		~photonMap_t(){ if(tree) delete tree; }
-		void setNumPaths(int n){ paths=n; }
-		void setName(const std::string &mapname) { name = mapname; }
-		void setNumThreadsPKDtree(int threads){ threadsPKDtree = threads; }
-		int nPaths() const{ return paths; }
-		int nPhotons() const{ return photons.size(); }
-		void pushPhoton(photon_t &p) { photons.push_back(p); updated=false; }
-		void swapVector(std::vector<photon_t> &vec) { photons.swap(vec); updated=false; }
-		void appendVector(std::vector<photon_t> &vec, unsigned int curr) { photons.insert(std::end(photons), std::begin(vec), std::end(vec)); updated=false; paths += curr;}
-		void reserveMemory(size_t numPhotons) { photons.reserve(numPhotons); }
-		void updateTree();
-		void clear(){ photons.clear(); delete tree; tree = nullptr; updated=false; }
-		bool ready() const { return updated; }
-	//	void gather(const point3d_t &P, std::vector< foundPhoton_t > &found, unsigned int K, float &sqRadius) const;
-		int gather(const point3d_t &P, foundPhoton_t *found, unsigned int K, float &sqRadius) const;
-		const photon_t* findNearest(const point3d_t &P, const vector3d_t &n, float dist) const;
-		std::mutex mutx;
+public:
+    // povman: for SSS, expand constructor and destructor for add phtree
 
-	protected:
-		std::vector<photon_t> photons;
-		int paths; //!< amount of photon paths that have been traced for generating the map
-		bool updated;
-		float searchRadius;
-		kdtree::pointKdTree<photon_t> *tree;
-		std::string name;
-		int threadsPKDtree = 1;
+    //photonMap_t(): paths(0), updated(false), searchRadius(1.), tree(0){ }
+    photonMap_t(): paths(0), updated(false), searchRadius(1.), tree(0), phTree(0){ }
 
-		friend class boost::serialization::access;
-		template<class Archive> void serialize(Archive & ar, const unsigned int version)
-		{
-			ar & BOOST_SERIALIZATION_NVP(photons);
-			ar & BOOST_SERIALIZATION_NVP(paths);
-			ar & BOOST_SERIALIZATION_NVP(updated);
-			ar & BOOST_SERIALIZATION_NVP(searchRadius);
-			ar & BOOST_SERIALIZATION_NVP(name);
-			ar & BOOST_SERIALIZATION_NVP(threadsPKDtree);
-			ar & BOOST_SERIALIZATION_NVP(tree);
-		}
+    // expand destructor are in photon.cc
+    //~photonMap_t(){ if(tree) delete tree; }
+    ~photonMap_t();
+
+    // end
+    void setNumPaths(int n){ paths=n; }
+    int nPaths() const{ return paths; }
+    int nPhotons() const{ return photons.size(); }
+    void pushPhoton(photon_t &p) { photons.push_back(p); updated=false; }
+    void swapVector(std::vector<photon_t> &vec) { photons.swap(vec); updated=false; }
+    void updateTree();
+    // povman: for SSS, expand function clear for add phTree
+    //void clear(){ photons.clear(); delete tree; tree=0; updated=false; }
+    void clear(){ photons.clear(); delete tree; tree=0; delete phTree; phTree=0; updated=false; }
+    // end
+    bool ready() const { return updated; }
+    //void gather(const point3d_t &P, std::vector< foundPhoton_t > &found, unsigned int K, PFLOAT &sqRadius) const;
+    int gather(const point3d_t &P, foundPhoton_t *found, unsigned int K, PFLOAT &sqRadius) const;
+    const photon_t* findNearest(const point3d_t &P, const vector3d_t &n, PFLOAT dist) const;
+
+    // add SSS code
+    void getAllPhotons(const point3d_t& woP, std::vector<const photon_t*>& sssPhotons);
+    int numberOfPhotonInDisc(const point3d_t &p, PFLOAT scale, PFLOAT dist) const;
+    // test
+    void updatePhTree();
+
+    // end
+protected:
+    std::vector<photon_t> photons;
+    int paths; //!< amount of photon paths that have been traced for generating the map
+    bool updated;
+    PFLOAT searchRadius;
+    kdtree::pointKdTree<photon_t> *tree;
+    // povman: add photonKdTree for use with SSS maps
+    kdtree::photonKdTree<photon_t> *phTree;
 };
 
 // photon "processes" for lookup

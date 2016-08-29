@@ -1,3 +1,19 @@
+/****************************************************************************
+ *      This library is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU Lesser General Public
+ *      License as published by the Free Software Foundation; either
+ *      version 2.1 of the License, or (at your option) any later version.
+ *
+ *      This library is distributed in the hope that it will be useful,
+ *      but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *      Lesser General Public License for more details.
+ *
+ *      You should have received a copy of the GNU Lesser General Public
+ *      License along with this library; if not, write to the Free Software
+ *      Foundation,Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ */
+
 #ifndef Y_ALLOC_H
 #define Y_ALLOC_H
 
@@ -10,6 +26,8 @@
 	#include <alloca.h>
 #elif defined (__MINGW32__) //Added by DarkTide to enable mingw32 compliation
 	#include <malloc.h>
+	#define _aligned_malloc __mingw_aligned_malloc
+	#define _aligned_free __mingw_aligned_free
 #endif
 
 __BEGIN_YAFRAY
@@ -37,7 +55,7 @@ inline void * y_memalign(size_t bound, size_t size)
 		return (nullptr);
 	else
 		return (ret);
-//#else 
+//#else
 //	return memalign(bound, size);
 #endif
 }
@@ -45,9 +63,9 @@ inline void * y_memalign(size_t bound, size_t size)
 inline void y_free(void *ptr) {
 #if (defined (_WIN32) && (defined (_MSC_VER)) || defined (__MINGW32__)) //Added by DarkTide to enable mingw32 compliation
 	_aligned_free(ptr);
-#else 
+#else
 	free(ptr);
-#endif 
+#endif
 }
 
 

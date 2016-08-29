@@ -2,8 +2,7 @@
  *
  * 			color.h: Color type and operators api
  *      This is part of the yafray package
- *      Copyright (C) 2002  Alejandro Conty Estévez
- *		Copyright (C) 2015  David Bluecame for Color Space modifications
+ *      Copyright (C) 2002  Alejandro Conty Estevez
  *
  *      This library is free software; you can redistribute it and/or
  *      modify it under the terms of the GNU Lesser General Public
@@ -30,6 +29,10 @@
 #include <string>
 #include <cmath>
 #include <utilities/mathOptimizations.h>
+#include <math.h>
+
+//using std::isinf;
+//using std::isnan;
 
 #include <boost/serialization/nvp.hpp>
 #include <boost/serialization/vector.hpp>
@@ -49,12 +52,19 @@ enum colorSpaces_t
 class YAFRAYCORE_EXPORT color_t
 {
 	friend color_t operator * (const color_t &a, const color_t &b);
-	friend color_t operator * (const float f, const color_t &b);
-	friend color_t operator * (const color_t &b, const float f);
-	friend color_t operator / (const color_t &b, const float f);
+	friend color_t operator * (const CFLOAT f, const color_t &b);
+	friend color_t operator * (const color_t &b, const CFLOAT f);
+	friend color_t operator / (const color_t &a, const color_t &b); // povman: add for SSS
+	friend color_t operator / (const color_t &b, const CFLOAT f);
+	friend color_t operator / (const CFLOAT f, const color_t &b); // povman: add for  SSS
 	friend color_t operator + (const color_t &a, const color_t &b);
 	friend color_t operator - (const color_t &a, const color_t &b);
-	friend float maxAbsDiff(const color_t &a, const color_t &b);
+	// povman: add for SSS
+	friend color_t colorSqrt (const color_t &b);
+	friend color_t colorExp (const color_t &b);
+	// end
+
+	friend CFLOAT maxAbsDiff(const color_t &a, const color_t &b);
 	friend YAFRAYCORE_EXPORT void operator >> (unsigned char *data, color_t &c);
 	friend YAFRAYCORE_EXPORT void operator << (unsigned char *data, const color_t &c);
 	friend YAFRAYCORE_EXPORT void operator >> (float *data, color_t &c);
@@ -68,8 +78,8 @@ class YAFRAYCORE_EXPORT color_t
 		color_t(float g) { R=G=B=g; }
 		color_t(float af[3]) { R=af[0];  G=af[1];  B=af[2]; }
 		bool isBlack() const { return ((R==0) && (G==0) && (B==0)); }
-		bool isNaN() const { return (std::isnan(R) || std::isnan(G) || std::isnan(B)); }
-		bool isInf() const { return (std::isinf(R) || std::isinf(G) || std::isinf(B)); }
+		//bool isNaN() const { return (isnan(R) || isnan(G) || isnan(B)); }
+		//bool isInf() const { return (isinf(R) || isinf(G) || isinf(B)); }
 		~color_t() {}
 		void set(float r, float g, float b) { R=r;  G=g;  B=b; }
 
@@ -228,7 +238,7 @@ class YAFRAYCORE_EXPORT rgbe_t
 			if (rgbe[3])
 			{   /*nonzero pixel*/
 				f = fLdexp(1.0,rgbe[3]-(int)(128+8));
-				return color_t(rgbe[0] * f,rgbe[1] * f,rgbe[2] * f);
+				return color_t(rgbe[0] * f, rgbe[1] * f, rgbe[2] * f);
 			}
 			else return color_t(0,0,0);
 		}
@@ -294,6 +304,17 @@ inline color_t operator / (const color_t &b,float f)
 {
 	return color_t(b.R/f,b.G/f,b.B/f);
 }
+// povman: add for SSS. TODO: review
+inline color_t operator / (const color_t &a, const color_t &b)
+{
+	return color_t(a.R/b.R,a.G/b.G,a.B/b.B);
+}
+inline color_t operator / ( const CFLOAT f, const color_t &b)
+{
+	return color_t(f/b.R,f/b.G,f/b.B);
+}
+
+//end
 
 inline color_t operator + (const color_t &a,const color_t &b)
 {
@@ -304,6 +325,17 @@ inline color_t operator - (const color_t &a, const color_t &b)
 {
 	return color_t(a.R-b.R, a.G-b.G, a.B-b.B);
 }
+// povman: add for SSS
+inline color_t colorSqrt (const color_t &b)
+{
+	return color_t(sqrtf(b.R),sqrtf(b.G),sqrtf(b.B));
+}
+
+inline color_t colorExp (const color_t &b)
+{
+	return color_t(expf(b.R),expf(b.G),expf(b.B));
+}
+// end
 
 /*
 inline color_t & color_t::operator *=(const color_t &c)

@@ -31,7 +31,7 @@ __BEGIN_YAFRAY
 //int hit_t1=0, hit_t2=0;
 
 areaLight_t::areaLight_t(const point3d_t &c, const vector3d_t &v1, const vector3d_t &v2,
-				const color_t &col,float inte, int nsam, bool bLightEnabled, bool bCastShadows):
+				const color_t &col, CFLOAT inte, int nsam):
 				corner(c), toX(v1), toY(v2), samples(nsam), intensity(inte)
 {
 	lLightEnabled = bLightEnabled;

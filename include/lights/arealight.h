@@ -1,3 +1,18 @@
+/****************************************************************************
+ *      This library is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU Lesser General Public
+ *      License as published by the Free Software Foundation; either
+ *      version 2.1 of the License, or (at your option) any later version.
+ *
+ *      This library is distributed in the hope that it will be useful,
+ *      but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *      Lesser General Public License for more details.
+ *
+ *      You should have received a copy of the GNU Lesser General Public
+ *      License along with this library; if not, write to the Free Software
+ *      Foundation,Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ */
 
 #ifndef Y_AREALIGHT_H
 #define Y_AREALIGHT_H
@@ -28,7 +43,7 @@ class areaLight_t : public light_t
 		static light_t *factory(paraMap_t &params, renderEnvironment_t &render);
 	protected:
 		point3d_t corner, c2, c3, c4;
-		vector3d_t toX,toY, normal, fnormal;
+		vector3d_t toX, toY, normal, fnormal;
 		vector3d_t du, dv; //!< directions for hemisampler (emitting photons)
 		color_t color; //!< includes intensity amplification! so...
 		int samples;

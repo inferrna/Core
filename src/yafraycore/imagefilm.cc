@@ -120,10 +120,13 @@ float Lanczos2(float dx, float dy)
 	return 0.f;
 }
 
-imageFilm_t::imageFilm_t (int width, int height, int xstart, int ystart, colorOutput_t &out, float filterSize, filterType filt,
-						  renderEnvironment_t *e, bool showSamMask, int tSize, imageSpliter_t::tilesOrderType tOrder, bool pmA):
-	w(width), h(height), cx0(xstart), cy0(ystart), filterw(filterSize*0.5), output(&out),
-	env(e), showMask(showSamMask), tileSize(tSize), tilesOrder(tOrder), premultAlpha(pmA)
+//-
+imageFilm_t::imageFilm_t (int width, int height, int xstart, int ystart, colorOutput_t &out, float filterSize,
+                          filterType filt, renderEnvironment_t *e, bool showSamMask, int tSize,
+                          imageSpliter_t::tilesOrderType tOrder, bool pmA, bool drawParams):
+flags(0), w(width), h(height), cx0(xstart), cy0(ystart), gamma(1.0), filterw(filterSize*0.5), output(&out),
+clamp(false), split(true), interactive(true), abort(false), correctGamma(false), splitter(0), pbar(0),
+env(e), showMask(showSamMask), tileSize(tSize), tilesOrder(tOrder), premultAlpha(pmA), drawParams(drawParams)
 {
 	cx1 = xstart + width;
 	cy1 = ystart + height;
@@ -150,7 +153,7 @@ imageFilm_t::imageFilm_t (int width, int height, int xstart, int ystart, colorOu
 		case LANCZOS: ffunc = Lanczos2; break;
 		case GAUSS: ffunc = Gauss; filterw *= 2.f; break;
 		case BOX:
-		default:	ffunc = Box;
+		default:	ffunc = Box; break;
 	}
 
 	filterw = std::min(std::max(0.501f, filterw), 0.5f * MAX_FILTER_SIZE); // filter needs to cover at least the area of one pixel and no more than MAX_FILTER_SIZE/2
@@ -247,6 +250,10 @@ void imageFilm_t::init(int numPasses)
 		imageFilmUpdateCheckInfo(); //film load check data initialization. Make sure this is done after the Film Load operation (if any).
 	}
 }
+
+void imageFilm_t::nextPass(bool adaptive_AA, std::string integratorName)
+{
+	int n_resample=0;
 
 int imageFilm_t::nextPass(int numView, bool adaptive_AA, std::string integratorName, bool skipNextPass)
 {
@@ -502,7 +509,21 @@ void imageFilm_t::finishArea(int numView, renderArea_t &a)
 	{
 		for(int i=a.X-cx0; i<end_x; ++i)
 		{
-			for(size_t idx = 0; idx < imagePasses.size(); ++idx)
+			col = (*image)(i, j).normalized();
+			col.clampRGB0();
+
+			if(correctGamma) col.gammaAdjust(gamma);
+			// pov: review this code. Used in lines-> 420, 599, 124. 
+			// introduced in this commit:
+			// https://github.com/YafaRay/Core/commit/83ab55d2854934cfe3a1cfcc32e3ffaceea958c6
+			// and now seems unused after 'transparent background' feature..
+			if(premultAlpha) col.alphaPremultiply();
+
+			if(depthMap)
+			{
+				if( !output->putPixel(i, j, (const float*)&col, true, true, (*depthMap)(i, j).normalized()) ) abort=true;
+			}
+			else
 			{
 				colExtPasses[idx] = (*imagePasses[idx])(i, j).normalized();
                 
@@ -1045,8 +1066,33 @@ void imageFilm_t::drawRenderSettings(std::stringstream & ss)
 	FT_GlyphSlot slot;
 	FT_Vector pen; // untransformed origin
 
-	std::string text_utf8 = ss.str();
-	std::u32string wtext_utf32 = utf8_to_wutf32(text_utf8);
+#ifdef RELEASE
+	std::string version = std::string(VERSION);
+#else
+	std::string version = std::string(YAF_SVN_REV);
+#endif
+
+	std::stringstream ss;
+
+	ss << "TheBounty (" << version << ")";
+
+	ss << std::setprecision(2);
+	double times = gTimer.getTime("rendert");
+	int timem, timeh;
+	gTimer.splitTime(times, &times, &timem, &timeh);
+	ss << " | Render time:";
+	if (timeh > 0) ss << " " << timeh << "h";
+	if (timem > 0) ss << " " << timem << "m";
+	ss << " " << times << "s";
+	ss << " | " << aaSettings;
+	ss << "\nLighting: " << integratorSettings;
+
+	if(!customString.empty())
+	{
+		ss << " | " << customString;
+	}
+
+	std::string text = ss.str();
 
 	// set font size at default dpi
 	float fontsize = 12.5f * yafLog.getLoggingFontSizeFactor();
@@ -1095,6 +1141,31 @@ void imageFilm_t::drawRenderSettings(std::stringstream & ss)
 #endif
 	// offsets
 	int textOffsetX = 4;
+	int logoWidth = 0;
+
+	// Draw logo image
+	paraMap_t ihParams;
+	ihParams["type"] = std::string("png");
+	ihParams["for_output"] = false;
+
+	imageHandler_t *logo = env->createImageHandler("logoLoader", ihParams, false);
+
+	if(logo && logo->loadFromMemory(yafLogoTiny, yafLogoTiny_size))
+	{
+		int lx, ly;
+		int imWidth = std::min(logo->getWidth(), w);
+		int imHeight = std::min(logo->getHeight(), dpHeight);
+		logoWidth = logo->getWidth();
+		textOffsetX += logoWidth;
+
+		for ( lx = 0; lx < imWidth; lx++ )
+        {
+            for ( ly = 0; ly < imHeight; ly++ ){
+				(*dpimage)(lx, ly) = logo->getPixel(lx, ly);
+            }
+        }
+		delete logo;
+	}
 
 #ifdef HAVE_FREETYPE
 	// The pen position in 26.6 cartesian space coordinates
@@ -1137,7 +1208,7 @@ void imageFilm_t::drawRenderSettings(std::stringstream & ss)
 		// increment pen position
 		pen.x += slot->advance.x;
 		pen.y += slot->advance.y;
-	}
+    }
 
 	// Cleanup
 	FT_Done_Face    ( face );

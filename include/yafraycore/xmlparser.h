@@ -1,3 +1,19 @@
+/****************************************************************************
+ *      This library is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU Lesser General Public
+ *      License as published by the Free Software Foundation; either
+ *      version 2.1 of the License, or (at your option) any later version.
+ *
+ *      This library is distributed in the hope that it will be useful,
+ *      but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *      Lesser General Public License for more details.
+ *
+ *      You should have received a copy of the GNU Lesser General Public
+ *      License along with this library; if not, write to the Free Software
+ *      Foundation,Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ */
+
 #ifndef Y_XMLPARSER_H
 #define Y_XMLPARSER_H
 
@@ -37,9 +53,7 @@ class xmlParser_t
 		void setParam(const std::string &name, parameter_t &param){ (*cparams)[name] = param; }
 		int currLevel() const{ return level; }
 		int stateLevel() const { return current ? current->level : -1; }
-		colorSpaces_t getInputColorSpace() const { return inputColorSpace; }
-		float getInputGamma() const { return inputGamma; }
-		
+
 		renderEnvironment_t *env;
 		scene_t *scene;
 		paraMap_t params, &render;
@@ -69,6 +83,7 @@ void endEl_paramlist(xmlParser_t &p, const char *element);
 void endEl_render(xmlParser_t &p, const char *element);
 void startEl_curve(xmlParser_t &p, const char *element, const char **attrs);
 void endEl_curve(xmlParser_t &p, const char *element);
+
 
 #endif // HAVE_XML
 

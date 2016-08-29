@@ -1,5 +1,5 @@
-project (yafaray)
-cmake_minimum_required (VERSION 2.6)
+project (thebounty)
+cmake_minimum_required (VERSION 2.8.11)
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/CMakeModules")
 set(CMAKE_COLOR_MAKEFILE ON)
@@ -12,12 +12,15 @@ option(WITH_JPEG "Build JPEG image I/O plugin" ON)
 option(WITH_PNG "Build PNG image I/O plugin" ON)
 option(WITH_TIFF "Build TIFF image I/O plugin" ON)
 option(WITH_XML_LOADER "Build XML Loader" ON)
-option(WITH_YAF_PY_BINDINGS "Enable the YafaRay Python bindings" ON)
-option(WITH_YAF_RUBY_BINDINGS "Enable the YafaRay Ruby bindings" OFF)
+option(WITH_QT "Enable Qt Gui build" ON)
+option(WITH_YAF_PY_BINDINGS "Enable the Python bindings" ON)
+option(WITH_YAF_RUBY_BINDINGS "Enable the Ruby bindings" OFF)
 option(WITH_OSX_ADDON "Enable the use of blender's included python lib on OSX platforms" OFF)
+option(BUILDRELEASE "Enable release mode building" OFF)
 option(DEBUG_BUILD "Enable debug build mode" OFF)
 option(FAST_MATH "Enable mathematic approximations to make code faster" ON)
 option(FAST_TRIG "Enable trigonometric approximations to make code faster" ON)
+option(WITH_OpenMP "Enable OpenMP parallel processing optimization" ON)
 
 ###### Packages and Definitions #########
 
@@ -126,11 +129,44 @@ else(WITH_TIFF)
 	message("Using TIFF: no")
 endif(WITH_TIFF)
 
+if(WITH_QT)
+	#find_package(Qt4 4.4.0 COMPONENTS QtCore QtGui REQUIRED)
+	# Qt enabling header
+	#include(${QT_USE_FILE})
+	message("Using Qt: yes")
+else(WITH_QT)
+	message("Using Qt: no")
+endif(WITH_QT)
+
 if(WITH_XML_LOADER)
 	message("Building XML loader: yes")
 else(WITH_XML_LOADER)
 	message("Building XML loader: no")
 endif(WITH_XML_LOADER)
+
+#---------------------------------------------
+# Add options for OpenMP dependences
+# Work in progress...
+#---------------------------------------------
+if(WITH_OpenMP)
+    message("Use OpenMP parallel processing: yes")
+    add_definitions(-DHAVE_OPENMP) # add nicely flags for use with code
+    if(MINGW)
+        #set(OpenMP_C_FLAGS "-fopenmp")
+        find_package(OpenMP REQUIRED)
+        if(OPENMP_FOUND)
+            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+        endif(OPENMP_FOUND)
+    endif(MINGW)
+    # Seems that MSVC have some issues with find_package(OpenMP)
+else(WITH_OpenMP)
+    message("Use OpenMP parallel processing: no")
+endif(WITH_OpenMP)
+#
+# end
+#
 
 if(WITH_YAF_PY_BINDINGS)
 	message("Building Python bindings: yes")
@@ -156,16 +192,32 @@ if (USER_INSTALL_PREFIX)
 	set(CMAKE_INSTALL_PREFIX ${USER_INSTALL_PREFIX})
 endif (USER_INSTALL_PREFIX)
 
+#------------------------------------------------------------------------------#
+# povman: review 'bin' and 'lib' dir because now, this package is 'packed'
+# inside an unique folder. Inside Blender addons folder or, in standalone
+# istallation form. So, the tree folder are the same on linux than windows
+# e.g: TheBounty/bin/plugins
+# Maybe is need review this setup when include TheBounty on some Linux distro
+#------------------------------------------------------------------------------#
+# binary dir
+if(NOT YAF_BIN_DIR)
+    set(YAF_BIN_DIR bin)
+endif(NOT YAF_BIN_DIR)
+
+# library dir
+# TODO: is necessary tested 'lib' dir under OSX systems. Keep old setup for now.
+if(NOT YAF_LIB_DIR)
+    if(APPLE)
+        set(YAF_LIB_DIR lib)
+    else(APPLE)
+        set(YAF_LIB_DIR ${YAF_BIN_DIR})
+    endif(APPLE)
+endif(NOT YAF_LIB_DIR)
+
+#-----------------------
+# build flags
+#-----------------------
 if(NOT WIN32)
-	# installation directories
-
-	if(NOT YAF_BIN_DIR)
-		set(YAF_BIN_DIR bin)
-	endif(NOT YAF_BIN_DIR)
-
-	if(NOT YAF_LIB_DIR)
-		set(YAF_LIB_DIR lib)
-	endif(NOT YAF_LIB_DIR)
 
 	# build flags
 	set(CMAKE_CXX_FLAGS "-Wall" CACHE STRING "Default compiler flags" FORCE)
@@ -189,13 +241,6 @@ if(NOT WIN32)
 	set(YAF_TARGET_TYPE LIBRARY)
 	
 else(NOT WIN32)
-	# installation directories
-
-	if(NOT YAF_BIN_DIR)
-		set(YAF_BIN_DIR bin)
-	endif(NOT YAF_BIN_DIR)
-
-	set(YAF_LIB_DIR ${YAF_BIN_DIR})
 
 	# build flags
 	if(MINGW)
@@ -244,18 +289,26 @@ if(YAF_USER_EXTRA_DEFS)
 	add_definitions(${YAF_USER_EXTRA_DEFS})
 endif(YAF_USER_EXTRA_DEFS)
 
-# Paths and flags configuration
+if (BUILDRELEASE)
+	add_definitions(-DRELEASE)
+endif (BUILDRELEASE)
 
-if(NOT WIN32)
-	if(NOT YAF_PLUGIN_DIR)
-		set(YAF_PLUGIN_DIR ${YAF_LIB_DIR}/yafaray)
-	endif(NOT YAF_PLUGIN_DIR)
-else(NOT WIN32)
-	if(NOT YAF_PLUGIN_DIR)
-		set(YAF_PLUGIN_DIR ${YAF_LIB_DIR}/plugins)
-	endif(NOT YAF_PLUGIN_DIR)
-endif(NOT WIN32)
+#------------------------------
+# Plugins paths configuration
+#------------------------------
+if(NOT YAF_PLUGIN_DIR)
+    # not sure about OSX tree folder. Keep old option
+    if(APPLE)
+        set(YAF_PLUGIN_DIR ${YAF_LIB_DIR}/yafaray)
+    # set same folder for windows and linux
+    else(APPLE)
+	    set(YAF_PLUGIN_DIR ${YAF_LIB_DIR}/plugins)
+    endif(APPLE)
+endif(NOT YAF_PLUGIN_DIR)
 
+#-----------------------------------
+# Buil flags configuration
+#-----------------------------------
 if (USER_RELFLAGS)
 	set(CMAKE_CXX_FLAGS_RELEASE "${YAF_CXX_FLAGS_RELEASE} ${USER_RELFLAGS}" CACHE STRING "Release compiler flags" FORCE)
 else (USER_RELFLAGS)

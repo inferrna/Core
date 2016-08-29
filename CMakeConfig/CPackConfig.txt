@@ -1,4 +1,4 @@
-option(BLENDER_ADDON "Build YafaRay as a self-contained blender add on" OFF)
+option(BLENDER_ADDON "Build TheBounty as a self-contained blender add on" OFF)
 if (BLENDER_ADDON)
     set(YAF_BIN_DIR .)
     set(YAF_LIB_DIR bin)
@@ -10,14 +10,14 @@ if (BLENDER_ADDON)
     endif (NOT BLENDER_EXPORTER_BRANCH)
 
     add_custom_target(blender_export ALL rm -rf blender_exporter
-        COMMAND git clone -b ${BLENDER_EXPORTER_BRANCH} git://github.com/YafaRay/Blender-Exporter blender_exporter
+        COMMAND git clone -b ${BLENDER_EXPORTER_BRANCH} git://github.com/TheBounty/Blender-Exporter blender_exporter
         COMMAND rm -rf blender_exporter/.git
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
     install(DIRECTORY blender_exporter/ DESTINATION .)
 
     set(CPACK_GENERATOR "ZIP")
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "yafaray")
-    set(CPACK_PACKAGE_FILE_NAME "yafaray")
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "thebounty")
+    set(CPACK_PACKAGE_FILE_NAME "TheBounty")
 endif (BLENDER_ADDON)
 

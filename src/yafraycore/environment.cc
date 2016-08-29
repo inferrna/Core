@@ -3,7 +3,7 @@
  *      environment.cc: Yafray environment for plugin loading and
  *      object instatiation
  *      This is part of the yafray package
- *      Copyright (C) 2005  Alejandro Conty Estévez, Mathias Wein
+ *      Copyright (C) 2005  Alejandro Conty Estevez, Mathias Wein
  *
  *      This library is free software; you can redistribute it and/or
  *      modify it under the terms of the GNU Lesser General Public
@@ -137,15 +137,13 @@ void renderEnvironment_t::loadPlugins(const std::string &path)
 
 bool renderEnvironment_t::getPluginPath(std::string &path)
 {
-	//Get plugin path from a subfolder of the current yafaray_xml executable file path
-	if(!session.getPathYafaRayXml().empty())
-	{
-		path = session.getPathYafaRayXml()+"/plugins/";
-		return true;
-	}
-	else return false;
+#if defined(WIN32)
+	path = std::string("plugins");
+#else
+	path = std::string(Y_PLUGINPATH);
+#endif
+    return true; 
 }
-
 
 material_t* renderEnvironment_t::getMaterial(const std::string &name)const
 {
@@ -973,7 +971,7 @@ std::vector<std::string> renderEnvironment_t::listImageHandlers()
 			ret.push_back(i->first);
 		}
 	}
-	else Y_ERROR_ENV << "There is no image handlers registrered" << yendl;
+	else Y_ERROR_ENV << "There is no image handlers registered" << yendl;
 
 	return ret;
 }
@@ -988,7 +986,7 @@ std::vector<std::string> renderEnvironment_t::listImageHandlersFullName()
 			ret.push_back(i->second);
 		}
 	}
-	else Y_ERROR_ENV << "There is no image handlers registrered" << yendl;
+	else Y_ERROR_ENV << "There is no image handlers registered" << yendl;
 
 	return ret;
 }
@@ -1003,7 +1001,7 @@ std::string renderEnvironment_t::getImageFormatFromFullName(const std::string &f
 			if(i->second == fullname) ret = i->first;
 		}
 	}
-	else Y_ERROR_ENV << "There is no image handlers registrered" << yendl;
+	else Y_ERROR_ENV << "There is no image handlers registered" << yendl;
 
 	return ret;
 }
@@ -1021,7 +1019,7 @@ std::string renderEnvironment_t::getImageFormatFromExtension(const std::string &
 			if(i->second.find(ext) != std::string::npos) ret = i->first;
 		}
 	}
-	else Y_ERROR_ENV << "There is no image handlers registrered" << yendl;
+	else Y_ERROR_ENV << "There is no image handlers registered" << yendl;
 
 	return ret;
 }
@@ -1036,7 +1034,7 @@ std::string renderEnvironment_t::getImageFullNameFromFormat(const std::string &f
 			if(i->first == format) ret = i->second;
 		}
 	}
-	else Y_ERROR_ENV << "There is no image handlers registrered" << yendl;
+	else Y_ERROR_ENV << "There is no image handlers registered" << yendl;
 
 	return ret;
 }

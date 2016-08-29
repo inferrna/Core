@@ -28,6 +28,7 @@ __BEGIN_YAFRAY
 // #define Y_MIN3(a,b,c) ( ((a)>(b)) ? ( ((b)>(c))?(c):(b)):( ((a)>(c))?(c):(a)) )
 // #define Y_MAX3(a,b,c) ( ((a)<(b)) ? ( ((b)>(c))?(b):(c)):( ((a)>(c))?(a):(c)) )
 
+/*
 #if (defined(_M_IX86) || defined(i386) || defined(_X86_))
 	#define Y_FAST_INT 1
 #else
@@ -54,7 +55,7 @@ inline int Y_Float2Int(double val) {
 	return (int)val;
 #endif
 }
-
+*/
 //still in old file...
 //int Kd_inodes=0, Kd_leaves=0, _emptyKd_leaves=0, Kd_prims=0, _clip=0, _bad_clip=0, _null_clip=0, _early_out=0;
 
@@ -193,8 +194,11 @@ void kdTree_t<T>::pigeonMinCost(u_int32 nPrims, bound_t &nodeBound, u_int32 *pri
 			b_right = (int)((t_up - min)*s);
 //			b_left = Y_Round2Int( ((t_low - min)*s) );
 //			b_right = Y_Round2Int( ((t_up - min)*s) );
-			if(b_left<0) b_left=0; else if(b_left > KD_BINS) b_left = KD_BINS;
-			if(b_right<0) b_right=0; else if(b_right > KD_BINS) b_right = KD_BINS;
+			if(b_left<0) b_left=0; 
+			else if(b_left > KD_BINS) b_left = KD_BINS;
+
+			if(b_right<0) b_right=0; 
+			else if(b_right > KD_BINS) b_right = KD_BINS;
 			
 			if(t_low == t_up)
 			{
@@ -253,9 +257,9 @@ void kdTree_t<T>::pigeonMinCost(u_int32 nPrims, bound_t &nodeBound, u_int32 *pri
 				nBelow += bin[i].c_left;
 				nAbove -= bin[i].c_right;
 				// cost:
-				float edget = bin[i].t;
-				if (edget > nodeBound.a[axis] &&
-					edget < nodeBound.g[axis]) {
+				PFLOAT edget = bin[i].t;
+				if (edget > nodeBound.a[axis] && edget < nodeBound.g[axis]) 
+				{
 					// Compute cost for split at _i_th edge
 					float l1 = edget - nodeBound.a[axis];
 					float l2 = nodeBound.g[axis] - edget;
@@ -269,7 +273,8 @@ void kdTree_t<T>::pigeonMinCost(u_int32 nPrims, bound_t &nodeBound, u_int32 *pri
 					else eb = 0.0f;
 					float cost = costRatio + invTotalSA * (rawCosts - eb);
 					// Update best split if this is lowest cost so far
-					if (cost < split.bestCost)  {
+					if (cost < split.bestCost)
+					{
 						split.t = edget;
 						split.bestCost = cost;
 						split.bestAxis = axis;
@@ -595,14 +600,16 @@ int kdTree_t<T>::buildTree(u_int32 nPrims, bound_t &nodeBound, u_int32 *primNums
 //		std::cout << "memcpy\n";
 		memcpy(oldPrims, primNums, nPrims*sizeof(int));
 		
-		for (int i=0; i<split.bestOffset; ++i)
+		for (int i = 0; i < split.bestOffset; ++i)
+		{
 			if (edges[split.bestAxis][i].end != UPPER_B)
 			{
 				cindizes[n0] = edges[split.bestAxis][i].primNum;
-//				if(cindizes[n0] >nPrims) std::cout << "error!!\n";
+				//if(cindizes[n0] >nPrims) std::cout << "error!!\n";
 				leftPrims[n0] = oldPrims[cindizes[n0]];
 				++n0;
 			}
+		}
 //		std::cout << "append n0\n";
 		for(int i=0; i<n0; ++i){ leftPrims[n0+i] = cindizes[i]; /* std::cout << cindizes[i] << " "; */ }
 		if (edges[split.bestAxis][split.bestOffset].end == BOTH_B)
@@ -627,14 +634,16 @@ int kdTree_t<T>::buildTree(u_int32 nPrims, bound_t &nodeBound, u_int32 *primNums
 	}
 	else //we did "normal" cost function
 	{	
-		for (int i=0; i<split.bestOffset; ++i)
-			if (edges[split.bestAxis][i].end != UPPER_B)
-				leftPrims[n0++] = edges[split.bestAxis][i].primNum;
-		if (edges[split.bestAxis][split.bestOffset].end == BOTH_B)
-			nRightPrims[n1++] = edges[split.bestAxis][split.bestOffset].primNum;
-		for (int i=split.bestOffset+1; i<split.nEdge; ++i)
-			if (edges[split.bestAxis][i].end != LOWER_B)
-				nRightPrims[n1++] = edges[split.bestAxis][i].primNum;
+		for (int i = 0; i < split.bestOffset; ++i)
+		{
+			if (edges[split.bestAxis][i].end != UPPER_B) leftPrims[n0++] = edges[split.bestAxis][i].primNum;
+		}
+		if (edges[split.bestAxis][split.bestOffset].end == BOTH_B) nRightPrims[n1++] = edges[split.bestAxis][split.bestOffset].primNum;
+		
+		for (int i = split.bestOffset + 1; i < split.nEdge; ++i)
+		{
+			if (edges[split.bestAxis][i].end != LOWER_B) nRightPrims[n1++] = edges[split.bestAxis][i].primNum;
+		}
 		splitPos = edges[split.bestAxis][split.bestOffset].pos;
 	}
 //	std::cout << "split axis: " << split.bestAxis << ", pos: " << splitPos << "\n";

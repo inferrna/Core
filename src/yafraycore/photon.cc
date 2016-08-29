@@ -1,4 +1,19 @@
-
+/****************************************************************************
+ *
+ *    This library is free software; you can redistribute it and/or
+ *    modify it under the terms of the GNU Lesser General Public
+ *    License as published by the Free Software Foundation; either
+ *    version 2.1 of the License, or (at your option) any later version.
+ *
+ *    This library is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *    Lesser General Public License for more details.
+ *
+ *    You should have received a copy of the GNU Lesser General Public
+ *    License along with this library; if not, write to the Free Software
+ *    Foundation,Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ */
 #include <yafraycore/photon.h>
 
 __BEGIN_YAFRAY
@@ -31,21 +46,43 @@ photonGather_t::photonGather_t(u_int32 mp, const point3d_t &P): p(P)
 void photonGather_t::operator()(const photon_t *photon, float dist2, float &maxDistSquared) const
 {
 	// Do usual photon heap management
-	if (foundPhotons < nLookup) {
+	if (foundPhotons < nLookup)
+    {
 		// Add photon to unordered array of photons
 		photons[foundPhotons++] = foundPhoton_t(photon, dist2);
-		if (foundPhotons == nLookup) {
-				std::make_heap(&photons[0], &photons[nLookup]);
-				maxDistSquared = photons[0].distSquare;
+		if (foundPhotons == nLookup)
+        {
+            std::make_heap(&photons[0], &photons[nLookup]);
+			maxDistSquared = photons[0].distSquare;
 		}
 	}
-	else {
-		// Remove most distant photon from heap and add new photon
+	else 
+    {
+        // Remove most distant photon from heap and add new photon
 		std::pop_heap(&photons[0], &photons[nLookup]);
 		photons[nLookup-1] = foundPhoton_t(photon, dist2);
 		std::push_heap(&photons[0], &photons[nLookup]);
 		maxDistSquared = photons[0].distSquare;
 	}
+}
+// povman: add update tree for photonKdTree.
+// Also is possible expand exist function, but this mode is more 'cleaned'
+void photonMap_t::updatePhTree()
+{
+    if(phTree) delete phTree;
+    if(photons.size() > 0)
+    {
+        phTree = new kdtree::photonKdTree<photon_t>(photons);
+        updated = true;
+    }
+    else phTree=0;
+}
+//povman: expand destructor for add photonKdTree
+photonMap_t::~photonMap_t()
+{
+    //
+    if(tree) delete tree;
+    if(phTree) delete phTree;
 }
 
 bool photonMapLoad(photonMap_t * map, const std::string &filename, bool debugXMLformat)
@@ -106,13 +143,13 @@ bool photonMapSave(const photonMap_t * map, const std::string &filename, bool de
 
 void photonMap_t::updateTree()
 {
-	if(tree) delete tree;
-	if(photons.size() > 0)
-	{
-		tree = new kdtree::pointKdTree<photon_t>(photons, name, threadsPKDtree);
-		updated = true;
-	}
-	else tree=0;
+    if(tree) delete tree;
+    if(photons.size() > 0)
+    {
+        tree = new kdtree::pointKdTree<photon_t>(photons);
+        updated = true;
+    }
+    else tree=0;
 }
 
 int photonMap_t::gather(const point3d_t &P, foundPhoton_t *found, unsigned int K, float &sqRadius) const
@@ -130,5 +167,28 @@ const photon_t* photonMap_t::findNearest(const point3d_t &P, const vector3d_t &n
 	tree->lookup(P, proc, dist);
 	return proc.nearest;
 }
+// povman: add specific code for SSS
+
+//const std::vector<const photon_t*>& photonMap_t::getAllPhotons(const point3d_t& woP)
+//{
+//	phtree->GetPhotons(woP,sssPhotons,1.0f);
+//	/*sssPhotons.clear();
+//	for (int i=0; i<photons.size(); i++) {
+//		sssPhotons.push_back(&photons[i]);
+//	}*/
+//	return sssPhotons;
+//}
+
+void photonMap_t::getAllPhotons(const point3d_t& woP, std::vector<const photon_t*>& sssPhotons)
+{
+	phTree->GetPhotons(woP, sssPhotons, 1.0f);
+}
+
+int photonMap_t::numberOfPhotonInDisc(const point3d_t &p, PFLOAT scale, PFLOAT dist) const
+{
+	return phTree->PhotonNumInDisc(p, scale, dist); // povman sss
+}
+// end add
+
 
 __END_YAFRAY

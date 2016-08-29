@@ -55,28 +55,24 @@ class intersectData_t
  */
 class YAFRAYCORE_EXPORT surfacePoint_t
 {
-	public:
-		float getDistToNearestEdge() const;
-	
-		//int object; //!< the object owner of the point.
-		const material_t *material; //!< the surface material
-		const light_t *light; //!< light source if surface point is on a light
-		const object3d_t *object; //!< object the prim belongs to
-	//	point2d_t screenpos; // only used with 'win' texture coord. mode
-		void *origin;
-		intersectData_t data;
+	//int object; //!< the object owner of the point.
+	const material_t *material; //!< the surface material
+	const light_t *light;       //!< light source if surface point is on a light
+	const object3d_t *object;   //!< object the prim belongs to
+//	point2d_t screenpos; // only used with 'win' texture coord. mode
+	void *origin;
 
-		// Geometry related
-		vector3d_t N; //!< the shading normal.
-		vector3d_t Ng; //!< the geometric normal.
-		vector3d_t orcoNg; //!< the untransformed geometric normal.
-		point3d_t P; //!< the (world) position.
-		point3d_t orcoP;
-	//	color_t vertex_col;
-		bool hasUV;
-		bool hasOrco;
-		bool available;
-		int primNum;
+	// Geometry related
+    vector3d_t N;       //!< the shading normal.
+	vector3d_t Ng;      //!< the geometric normal.
+	vector3d_t orcoNg;  //!< the untransformed geometric normal.
+	point3d_t P;        //!< the (world) position.
+	point3d_t orcoP;
+//	color_t vertex_col;
+	bool hasUV;
+	bool hasOrco;
+	bool available;
+	int primNum;
 
 		float U; //!< the u texture coord.
 		float V; //!< the v texture coord.

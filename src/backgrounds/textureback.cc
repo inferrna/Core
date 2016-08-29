@@ -128,12 +128,22 @@ color_t textureBackground_t::eval(const ray_t &ray, bool from_postprocessed) con
 	return power * ret;
 }
 
-background_t* textureBackground_t::factory(paraMap_t &params,renderEnvironment_t &render)
+background_t* textureBackground_t::factory(paraMap_t &params, renderEnvironment_t &render)
 {
-	texture_t *tex=nullptr;
-	const std::string *texname=nullptr;
-	const std::string *mapping=nullptr;
-	PROJECTION pr = spherical;
+    // new concept of IBL textured background based on .ibl files 
+    // you have some slots for textures: 
+    //    - one blurred hdri for illuminate your scene (hdri, exr)
+    //    - one hight definition maps for material reflections (hdri, tiff, exr..)
+    //    - one image map for background ( this image is also possible add in post-production (compositor)
+    const texture_t *ibltex = 0;
+    const std::string *ibltexname = 0;
+    const std::string *iblmapping = 0;
+    PROJECTION iblpr = spherical;
+
+	//const texture_t *tex=0;
+	//const std::string *texname=0;
+	//const std::string *mapping=0;
+	//PROJECTION pr = spherical;
 	float power = 1.0, rot=0.0;
 	bool IBL = false;
 	float IBL_blur = 0.f;
@@ -143,20 +153,20 @@ background_t* textureBackground_t::factory(paraMap_t &params,renderEnvironment_t
 	bool diffuse = true;
 	bool castShadows = true;
 	
-	if( !params.getParam("texture", texname) )
+	if( !params.getParam("ibl_texture", ibltexname) )
 	{
 		Y_ERROR << "TextureBackground: No texture given for texture background!" << yendl;
 		return nullptr;
 	}
-	tex = render.getTexture(*texname);
-	if( !tex )
+	ibltex = render.getTexture(*ibltexname);
+	if( !ibltex )
 	{
-		Y_ERROR << "TextureBackground: Texture '" << *texname << "' for textureback not existant!" << yendl;
-		return nullptr;
+		Y_ERROR << "TextureBackground: Texture '" << *ibltexname << "' for textureback not existant!" << yendl;
+		return NULL;
 	}
-	if( params.getParam("mapping", mapping) )
+	if( params.getParam("ibl_mapping", iblmapping) )
 	{
-		if(*mapping == "probe" || *mapping == "angular") pr = angular;
+		if(*iblmapping == "probe" || *iblmapping == "angular") iblpr = angular;
 	}
 	params.getParam("ibl", IBL);
 	params.getParam("smartibl_blur", IBL_blur);
@@ -168,25 +178,16 @@ background_t* textureBackground_t::factory(paraMap_t &params,renderEnvironment_t
 	params.getParam("with_diffuse", diffuse);
 	params.getParam("cast_shadows", castShadows);
 	
-	background_t *texBG = new textureBackground_t(tex, pr, power, rot, IBL, IBL_blur, caust);
+	background_t *texBG = new textureBackground_t(ibltex, iblpr, power, rot);
 	
 	if(IBL)
 	{
 		paraMap_t bgp;
 		bgp["type"] = std::string("bglight");
 		bgp["samples"] = IBL_sam;
-		bgp["with_caustic"] = caust;
-		bgp["with_diffuse"] = diffuse;
-		bgp["abs_intersect"] = false; //this used to be (pr == angular);  but that caused the IBL light to be in the wrong place (see http://www.yafaray.org/node/714) I don't understand why this was set that way, we should keep an eye on this.
-		bgp["cast_shadows"] = castShadows;
-				
-		if(IBL_blur > 0.f)
-		{
-			Y_INFO << "TextureBackground: starting background SmartIBL blurring with IBL Blur factor=" << IBL_blur << yendl;
-			tex->postProcessedCreate();
-			tex->postProcessedBlur(IBL_blur);
-			Y_VERBOSE << "TextureBackground: background SmartIBL blurring done." << yendl;
-		}
+		bgp["shoot_caustics"] = caust;
+		bgp["shoot_diffuse"] = diffuse;
+		bgp["abs_intersect"] = (iblpr == angular);
 		
 		light_t *bglight = render.createLight("textureBackground_bgLight", bgp);
 		
@@ -268,13 +269,11 @@ background_t* constBackground_t::factory(paraMap_t &params,renderEnvironment_t &
 }
 
 extern "C"
-{
-	
+{	
 	YAFRAYPLUGIN_EXPORT void registerPlugin(renderEnvironment_t &render)
 	{
 		render.registerFactory("textureback",textureBackground_t::factory);
 		render.registerFactory("constant", constBackground_t::factory);
 	}
-
 }
 __END_YAFRAY

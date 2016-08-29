@@ -3,15 +3,15 @@
  *      mathOptimizations.h: Math aproximations to speed up things
  *      This is part of the yafray package
  *      Copyright (C) 2009 Rodrigo Placencia Vazquez (DarkTide)
- *		Creation date: 2009-03-26
+ *      Creation date: 2009-03-26
  *
- *		fPow() based on the polynomials approach form Jose Fonséca's blog entry:
- *		Fast SSE2 pow: tables or polynomials?
- *		http://jrfonseca.blogspot.com/2008/09/fast-sse2-pow-tables-or-polynomials.html
+ *      fPow() based on the polynomials approach form Jose Fons�ca's blog entry:
+ *      Fast SSE2 pow: tables or polynomials?
+ *      http://jrfonseca.blogspot.com/2008/09/fast-sse2-pow-tables-or-polynomials.html
  *
- *		fSin() and fCos() based on Fast and Accurate sine/cosine
- *		thread on DevMaster.net forum, posted by Nick
- *		http://www.devmaster.net/forums/showthread.php?t=5784
+ *      fSin() and fCos() based on Fast and Accurate sine/cosine
+ *      thread on DevMaster.net forum, posted by Nick
+ *      http://www.devmaster.net/forums/showthread.php?t=5784
  *
  ****************************************************************************
  *
@@ -81,19 +81,46 @@
 # define M_SQRT1_2	0.70710678118654752440	/* 1/sqrt(2) */
 #endif
 
+//#define M_E           2.7182818284590452354   /* e */
+//#define M_LOG2E       1.4426950408889634074   /* log_2 e */
+//#define M_LOG10E      0.43429448190325182765  /* log_10 e */
+//#define M_LN2         0.69314718055994530942  /* log_e 2 */
+//#define M_LN10        2.30258509299404568402  /* log_e 10 */
+//#define M_PI          3.14159265358979323846  /* pi */
+//#define M_PI_2        1.57079632679489661923  /* pi/2 */
+//#define M_PI_4        0.78539816339744830962  /* pi/4 */
+//#define M_1_PI        0.31830988618379067154  /* 1/pi */
+//#define M_2_PI        0.63661977236758134308  /* 2/pi */
+//#define M_2_SQRTPI    1.12837916709551257390  /* 2/sqrt(pi) */
+//#define M_SQRT2       1.41421356237309504880  /* sqrt(2) */
+//#define M_SQRT1_2     0.70710678118654752440  /* 1/sqrt(2) */
 
 __BEGIN_YAFRAY
 
-#define M_2PI		6.28318530717958647692 // PI * 2
-#define M_PI2		9.86960440108935861882 // PI ^ 2
-#define M_1_2PI		0.15915494309189533577 // 1 / (2 * PI)
-#define M_4_PI		1.27323954473516268615 // 4 / PI
-#define M_4_PI2		0.40528473456935108578 // 4 / PI ^ 2
+#define M_2PI       6.28318530717958647692 // PI * 2
+#define M_PI2       9.86960440108935861882 // PI ^ 2
+#define M_1_2PI     0.15915494309189533577 // 1 / (2 * PI)
+#define M_4_PI      1.27323954473516268615 // 4 / PI
+#define M_4_PI2     0.40528473456935108578 // 4 / PI ^ 2
+/* povman add for Autodesk plugins*/
+#define M_1_PI_4    0.07957747154594766788 /* 1/(pi/4) */
+#define M_1_PI_8    0.03978873577297383394 /* 1/(pi/8) */
+#if !defined(M_PI_2)
+#define M_PI_2      1.57079632679489661923  /* pi/2 */
+#endif
+#if !defined(M_PI)
+#define M_PI        3.14159265358979323846  /* pi */
+#endif
+#if !defined(M_1_PI)
+#define M_1_PI      0.31830988618379067154  /* 1/pi */
+#endif
+/* end */
 
 #define degToRad(deg) (deg * 0.01745329251994329576922)  // deg * PI / 180
 #define radToDeg(rad) (rad * 57.29577951308232087684636) // rad * 180 / PI
 
-//FIXME: All the overloaded double definitions have been added to fix the "white dots" problems and they seem to work fine. However several of them should be refined in the future to include constants with the correct precision for the doubles calculations.
+//FIXME: All the overloaded double definitions have been added to fix the "white dots" problems and they seem to work fine.
+//However several of them should be refined in the future to include constants with the correct precision for the doubles calculations.
 
 #define POLYEXP(x) (float)(x * (x * (x * (x * (x * 1.8775767e-3f + 8.9893397e-3f) + 5.5826318e-2f) + 2.4015361e-1f) + 6.9315308e-1f) + 9.9999994e-1f)
 #define POLYLOG(x) (float)(x * (x * (x * (x * (x * -3.4436006e-2f + 3.1821337e-1f) + -1.2315303f) + 2.5988452) + -3.3241990f) + 3.1157899f)
@@ -108,62 +135,106 @@ __BEGIN_YAFRAY
 
 union bitTwiddler
 {
-	int i;
-	float f;
+    int i;
+    float f;
 };
 
 inline float fExp2(float x)
 {
-	bitTwiddler ipart, fpart;
-	bitTwiddler expipart;
+    bitTwiddler ipart, fpart;
+    bitTwiddler expipart;
 
-	x = std::min(x, f_HI);
-	x = std::max(x, f_LOW);
+    x = std::min(x, f_HI);
+    x = std::max(x, f_LOW);
 
-	ipart.i = (int)(x - 0.5f);
-	fpart.f = (x - (float)(ipart.i));
-	expipart.i = ((ipart.i + 127) << 23);
+    ipart.i = (int)(x - 0.5f);
+    fpart.f = (x - (float)(ipart.i));
+    expipart.i = ((ipart.i + 127) << 23);
 
-	return (expipart.f * POLYEXP(fpart.f));
+    return (expipart.f * POLYEXP(fpart.f));
 }
 
 inline float fLog2(float x)
 {
-	bitTwiddler one, i, m, e;
+    bitTwiddler one, i, m, e;
 
-	one.f = 1.0f;
-	i.f = x;
-	e.f = (float)(((i.i & LOG_EXP) >> 23) - 127);
-	m.i = ((i.i & LOG_MANT) | one.i);
+    one.f = 1.0f;
+    i.f = x;
+    e.f = (float)(((i.i & LOG_EXP) >> 23) - 127);
+    m.i = ((i.i & LOG_MANT) | one.i);
 
-	return (POLYLOG(m.f) * (m.f - one.f) + e.f);
+    return (POLYLOG(m.f) * (m.f - one.f) + e.f);
 }
+// povman: alternate sqrt approximation for use with _WIN64 compilers
+// source: https://en.wikipedia.org/wiki/Methods_of_computing_square_roots
+// with some small changes
+/* Assumes that float is in the IEEE 754 single precision floating point format
+* and that int is 32 bits. */
+#if defined(_MSC_VER) && defined(_WIN64)
+#include <stdint.h>
+inline float sqrt_approx(float z)
+{
+    int32_t val_int = *(int32_t*)&z; /* Same bits, but as an int */
+    /*
+    * To justify the following code, prove that
+    *
+    * ((((val_int / 2^m) - b) / 2) + b) * 2^m = ((val_int - 2^m) / 2) + ((b + 1) / 2) * 2^m)
+    *
+    * where
+    *
+    * b = exponent bias
+    * m = number of mantissa bits
+    *
+    * .
+    */
+
+    val_int -= 1 << 23; /* Subtract 2^m. */
+    val_int >>= 1;      /* Divide by 2. */
+    val_int += 1 << 29; /* Add ((b + 1) / 2) * 2^m. */
+
+    return *(float*)&val_int; /* Interpret again as float */
+}
+#endif
 
 inline float asmSqrt(float n)
 {
     float r = n;
-#ifdef _MSC_VER
-	r = sqrt(n);
-#elif defined (__APPLE__)
-	asm(
-		"flds %0;"
-		"fsqrt;"
-		"fstps %0"
-		:"=m" (r)
-		:"m" (r)
-		);
-#elif defined(__GNUC__) && defined(__i386__)
+
+// refine flags because x64 don't accept __asm, tested by 'paultron' on win7 x64 using MSVS 2013
+#if defined(_MSC_VER) && !defined(_WIN64)
+    __asm
+    {
+        fld r
+        fsqrt
+        fstp r
+    }
+// add explicit case for Clang compilers tested by 'jensverwiebe' & 'Sembei' on OSX x64
+// also tested by 'povmaniac' on Ubuntu 12.04 amd64 using Clang 3.5
+#elif defined(__clang__)
     asm(
-		"fld %0;"
-		"fsqrt;"
-		"fstp %0"
-		:"=m" (r)
-		:"m" (r)
-		);
-#elif defined(__GNUC__) && defined(__x86_64__)
-	r = sqrt(n);
+        "flds %0;"
+        "fsqrt;"
+        "fstps %0"
+        :"=m" (r)
+        :"m" (r)
+        );
+#elif defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__))
+    asm(
+        "fld %0;"
+        "fsqrt;"
+        "fstp %0"
+        :"=m" (r)
+        :"m" (r)
+        );
 #else
-    r = fsqrt(n);
+    // this function is non defined, maybe is 'fSqrt' defined in this same file..?,
+    // but if fSqrt is used, a recursive flow is created, making on error of 'runtime stackoverflow',
+    // because if FAST_MATH is ON, fSqrt call this fuction 'inline float asmSqrt(float n)'
+    // temporary solution: use standar sqrt function declared on math.h.
+    // TODO: make some test with black & white dots scenes
+
+    r = sqrt(n); // atm, is used for MSVC compilers under windows x64
+
 #endif
     return r;
 }
@@ -171,96 +242,99 @@ inline float asmSqrt(float n)
 inline float fPow(float a, float b)
 {
 #ifdef FAST_MATH
-	return fExp2(fLog2(a) * b);
+    return fExp2(fLog2(a) * b);
 #else
-	return pow(a,b);
+    return pow(a,b);
 #endif
 }
 
 inline float fLog(float a)
 {
 #ifdef FAST_MATH
-	return fLog2(a) * (float) M_LN2;
+    return fLog2(a) * (float) M_LN2;
 #else
-	return log(a);
+    return log(a);
 #endif
 }
 
 inline float fExp(float a)
 {
 #ifdef FAST_MATH
-	return fExp2((float)M_LOG2E * a);
+    return fExp2((float)M_LOG2E * a);
 #else
-	return exp(a);
+    return exp(a);
 #endif
 }
 
 inline float fSqrt(float a)
 {
 #ifdef FAST_MATH
-	return asmSqrt(a);
+    #if defined(_MSC_VER) && defined(_WIN64)
+        return sqrt_approx(a);
+    #endif
+    return asmSqrt(a);
 #else
-	return sqrt(a);
+    return sqrt(a);
 #endif
 }
 
 inline float fLdexp(float x, int a)
 {
 #ifdef FAST_MATH
-	//return x * fPow(2.0, a);
-	return ldexp(x, a);
+    //return x * fPow(2.0, a);
+    return ldexp(x, a);
 #else
-	return ldexp(x, a);
+    return ldexp(x, a);
 #endif
 }
 
 inline float fSin(float x)
 {
 #ifdef FAST_TRIG
-	if(x > M_2PI || x < -M_2PI) x -= ((int)(x * (float)M_1_2PI)) * (float)M_2PI; //float modulo x % M_2PI
-	if(x < -M_PI)
-	{
-		x += (float)M_2PI;
-	}
-	else if(x > M_PI)
-	{
-		x -= (float)M_2PI;
-	}
+    if(x > M_2PI || x < -M_2PI) x -= ((int)(x * (float)M_1_2PI)) * (float)M_2PI; //float modulo x % M_2PI
+    if(x < -M_PI)
+    {
+        x += (float)M_2PI;
+    }
+    else if(x > M_PI)
+    {
+        x -= (float)M_2PI;
+    }
 
-	x = ((float)M_4_PI * x) - ((float)M_4_PI2 * x * std::fabs(x));
-	float result = CONST_P * (x * std::fabs(x) - x) + x;
-  //Make sure that the function is in the valid range [-1.0,+1.0]
-	if(result <= -1.0) return -1.0f;
-	else if(result >= 1.0) return 1.0f;
-	else return result;
+    x = ((float)M_4_PI * x) - ((float)M_4_PI2 * x * std::fabs(x));
+    float result = CONST_P * (x * std::fabs(x) - x) + x;
+    //Make sure that the function is in the valid range [-1.0,+1.0]
+    if(result <= -1.0) return -1.0f;
+    else if(result >= 1.0) return 1.0f;
+    else return result;
 #else
-	return sin(x);
+    return sin(x);
 #endif
 }
 
 inline float fCos(float x)
 {
 #ifdef FAST_TRIG
-	return fSin(x + (float)M_PI_2);
+    return fSin(x + (float)M_PI_2);
 #else
-	return cos(x);
+    return cos(x);
 #endif
 }
 
 inline float fAcos(float x)
 {
-	//checks if variable gets out of domain [-1.0,+1.0], so you get the range limit instead of NaN
-	if(x<=-1.0) return((float)M_PI);
-	else if(x>=1.0) return(0.0);
-	else return acos(x);
+    //checks if variable gets out of domain [-1.0,+1.0], so you get the range limit instead of NaN
+    if(x<=-1.0) return((float)M_PI);
+    else if(x>=1.0) return(0.0);
+    else return acos(x);
 }
 
 inline float fAsin(float x)
 {
-	//checks if variable gets out of domain [-1.0,+1.0], so you get the range limit instead of NaN
-	if(x<=-1.0) return((float)-M_PI_2);
-	else if(x>=1.0) return((float)M_PI_2);
-	else return asin(x);
+    //checks if variable gets out of domain [-1.0,+1.0], so you get the range limit instead of NaN
+    if(x<=-1.0) return((float)-M_PI_2);
+    else if(x>=1.0) return((float)M_PI_2);
+    else return asin(x);
 }
 
 __END_YAFRAY

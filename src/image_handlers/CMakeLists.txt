@@ -35,7 +35,11 @@ endif(WITH_PNG)
 
 if(WITH_TIFF)
 add_library(tifHandler SHARED tifHandler.cc)
-target_link_libraries(tifHandler yafaray_v3_core -Wl,-undefined -Wl,dynamic_lookup ${TIFF_LIBRARY} ${OpenCV_LIBRARIES})
+if(APPLE)
+	target_link_libraries(tifHandler yafaraycore -Wl,-undefined -Wl,dynamic_lookup ${TIFF_LIBRARY})
+ELSE(APPLE)
+	target_link_libraries(tifHandler yafaraycore ${TIFF_LIBRARY})
+ENDIF(APPLE)
 endif(WITH_TIFF)
 
 add_library(tgaHandler SHARED tgaHandler.cc)

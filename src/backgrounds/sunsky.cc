@@ -29,7 +29,7 @@
 __BEGIN_YAFRAY
 
 // sunsky, from 'A Practical Analytic Model For DayLight" by Preetham, Shirley & Smits.
-// http://www.cs.utah.edu/vissim/papers/sunsky/
+// https://www.cs.utah.edu/~shirley/papers/sunsky/sunsky.pdf
 // based on the actual code by Brian Smits
 // and a thread on gamedev.net on skycolor algorithms
 

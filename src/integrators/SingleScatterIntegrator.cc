@@ -281,7 +281,6 @@ public:
 	virtual colorA_t transmittance(renderState_t &state, ray_t &ray) const
 	{
 		colorA_t Tr(1.f);
-		//return Tr;
 		
 		if (VRSize == 0) return Tr;
 		
@@ -479,7 +478,9 @@ public:
 
 			pos += currentStep;
 		}
-		result.A = 1.0f; // FIXME: get correct alpha value, does it even matter?
+        // povman test: clamping all color values to right range
+		result.clampRGBA01();
+		//result.A = 1.0f; // FIXME: get correct alpha value, does it even matter?
 		return result;
 	}
 	

@@ -258,8 +258,8 @@ background_t *darkSkyBackground_t::factory(paraMap_t &params,renderEnvironment_t
 	float turb = 4.0;
 	float altitude = 0.0;
 	int bgl_samples = 8;
-	float power = 1.0; //bgLight Power
-	float pw = 1.0;// sunLight power
+	float power = 1.0;  // bgLight Power
+	float pw = 1.0;     // sunLight power
 	float bright = 1.0;
 	bool add_sun = false;
 	bool bgl = false;
