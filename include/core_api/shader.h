@@ -32,15 +32,15 @@ class shaderNode_t;
 struct nodeResult_t
 {
 	nodeResult_t() {}
-	nodeResult_t(colorA_t color, float fval): col(color), f(fval) {}
+	nodeResult_t(colorA_t color, CFLOAT fval): col(color), f(fval) {}
 	colorA_t col;
-	float f;
+	CFLOAT f;
 };
 
 class nodeStack_t
 {
 	public:
-		nodeStack_t() { dat = nullptr; }
+		nodeStack_t() { dat = NULL; }
 		nodeStack_t(void *data) { dat = (nodeResult_t *)data; }
 		const nodeResult_t& operator()( unsigned int ID) const
 		{
@@ -96,12 +96,12 @@ class YAFRAYCORE_EXPORT shaderNode_t
 		/*! get the color value calculated on eval */
 		colorA_t getColor(const nodeStack_t &stack)const { return stack(this->ID).col; }
 		/*! get the scalar value calculated on eval */
-		float getScalar(const nodeStack_t &stack)const { return stack(this->ID).f; }
+		CFLOAT getScalar(const nodeStack_t &stack)const { return stack(this->ID).f; }
 		//! get the (approximate) partial derivatives df/dNU and df/dNV
 		/*! where f is the shader function, and NU/NV/N build the shading coordinate system
 			\param du df/dNU
 			\param dv df/dNV	*/
-		void getDerivative(const nodeStack_t &stack, float &du, float &dv)const
+		void getDerivative(const nodeStack_t &stack, CFLOAT &du, CFLOAT &dv)const
 			{ du = stack(this->ID).col.R; dv = stack(this->ID).col.G; }
 		/* virtual void getDerivative(const surfacePoint_t &sp, float &du, float &dv)const {du=0.f, dv=0.f;} */
 		unsigned int ID;
@@ -165,7 +165,7 @@ inline color_t texture_rgb_blend(const color_t &tex, const color_t &out, float f
 
 }
 
-inline float texture_value_blend(float tex, float out, float fact, float facg, mix_modes blendtype, bool flip=false)
+inline float texture_value_blend(float tex, float out, float fact, float facg, mix_modes blendtype, bool flip)
 {
 	fact *= facg;
 	float facm = 1.f-fact;
@@ -193,13 +193,13 @@ inline float texture_value_blend(float tex, float out, float fact, float facg, m
 			return facm*out + fact*std::fabs(tex-out);
 
 		case MN_DARK: {
-			float col = fact*tex;
+			CFLOAT col = fact*tex;
 			if (col<out) return col;
 			return out;
 		}
 
 		case MN_LIGHT: {
-			float col = fact*tex;
+			CFLOAT col = fact*tex;
 			if (col>out) return col;
 			return out;
 		}

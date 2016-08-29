@@ -52,7 +52,7 @@ inline void * y_memalign(size_t bound, size_t size)
 	// someone check if this maybe is available on OS X meanwhile...thx :)
 	void *ret;
 	if (posix_memalign(&ret, bound, size) != 0)
-		return (nullptr);
+		return (NULL);
 	else
 		return (ret);
 //#else

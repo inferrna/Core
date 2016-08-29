@@ -24,12 +24,8 @@
 #define Y_COUTPUT_H
 
 #include "yafray_constants.h"
-#include <core_api/color.h>
-#include <map>
 
 __BEGIN_YAFRAY
-
-class renderPasses_t;
 
 /*! Base class for rendering output containers */
 

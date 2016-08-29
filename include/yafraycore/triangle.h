@@ -46,8 +46,8 @@ class YAFRAYCORE_EXPORT triangle_t
 	friend class triangleInstance_t;
 
 	public:
-		triangle_t(): pa(-1), pb(-1), pc(-1), na(-1), nb(-1), nc(-1), mesh(nullptr), intersectionBiasFactor(0.f), edge1(0.f), edge2(0.f) { /* Empty */ }
-        triangle_t(int ia, int ib, int ic, triangleObject_t* m): pa(ia), pb(ib), pc(ic), na(-1), nb(-1), nc(-1), mesh(m), intersectionBiasFactor(0.f), edge1(0.f), edge2(0.f) {  updateIntersectionCachedValues(); }
+		triangle_t(): pa(-1), pb(-1), pc(-1), na(-1), nb(-1), nc(-1), mesh(NULL) { /* Empty */ }
+        triangle_t(int ia, int ib, int ic, triangleObject_t* m): pa(ia), pb(ib), pc(ic), na(-1), nb(-1), nc(-1), mesh(m) { /* Empty */ }
 		virtual bool intersect(const ray_t &ray, float *t, intersectData_t &data) const;
 		virtual bound_t getBound() const;
 		virtual bool intersectsBound(exBound_t &eb) const;
@@ -60,7 +60,7 @@ class YAFRAYCORE_EXPORT triangle_t
 		virtual void sample(float s1, float s2, point3d_t &p, vector3d_t &n) const;
 
 		virtual vector3d_t getNormal() const{ return vector3d_t(normal); }
-		void setVertexIndices(int a, int b, int c){ pa=a, pb=b, pc=c; updateIntersectionCachedValues(); }
+		void setVertexIndices(int a, int b, int c){ pa=a, pb=b, pc=c; }
 		void setMaterial(const material_t *m) { material = m; }
 		void setNormals(int a, int b, int c){ na=a, nb=b, nc=c; }
 		virtual void recNormal();
@@ -74,8 +74,6 @@ class YAFRAYCORE_EXPORT triangle_t
             out << "[ idx = " << t.selfIndex << " (" << t.pa << "," << t.pb << "," << t.pc << ")]";
             return out;
         }
-        virtual const triangleObject_t* getMesh() const { return mesh; }
-        virtual void updateIntersectionCachedValues();
 
 	private:
 		int pa, pb, pc; //!< indices in point array, referenced in mesh.
@@ -84,8 +82,6 @@ class YAFRAYCORE_EXPORT triangle_t
 		vector3d_t normal; //!< the geometric normal
         const triangleObject_t* mesh;
 		size_t selfIndex;
-		float intersectionBiasFactor;	//!< Intersection Bias factor based on longest edge to reduce 
-		vector3d_t edge1, edge2;
 };
 
 class YAFRAYCORE_EXPORT triangleInstance_t: public triangle_t
@@ -94,8 +90,8 @@ class YAFRAYCORE_EXPORT triangleInstance_t: public triangle_t
 	friend class triangleObjectInstance_t;
 
 	public:
-		triangleInstance_t(): mBase(nullptr), mesh(nullptr) { }
-        triangleInstance_t(triangle_t* base, triangleObjectInstance_t* m): mBase(base), mesh(m) { updateIntersectionCachedValues();}
+		triangleInstance_t(): mBase(NULL), mesh(NULL) { }
+        triangleInstance_t(triangle_t* base, triangleObjectInstance_t* m): mBase(base), mesh(m) { }
 		virtual bool intersect(const ray_t &ray, float *t, intersectData_t &data) const;
 		virtual bound_t getBound() const;
 		virtual bool intersectsBound(exBound_t &eb) const;
@@ -109,7 +105,6 @@ class YAFRAYCORE_EXPORT triangleInstance_t: public triangle_t
 
 		virtual vector3d_t getNormal() const;
 		virtual void recNormal() { /* Empty */ };
-		virtual void updateIntersectionCachedValues();
 
 	private:
         const triangle_t* mBase;
@@ -127,7 +122,7 @@ class YAFRAYCORE_EXPORT vTriangle_t: public primitive_t
 		vTriangle_t(){};
 		vTriangle_t(int ia, int ib, int ic, meshObject_t* m): pa(ia), pb(ib), pc(ic),
 					na(-1), nb(-1), nc(-1), mesh(m){ /*recNormal();*/ };
-		virtual bool intersect(const ray_t &ray, float *t, intersectData_t &data) const;
+		virtual bool intersect(const ray_t &ray, PFLOAT *t, intersectData_t &data) const;
 		virtual bound_t getBound() const;
 		virtual bool intersectsBound(exBound_t &eb) const;
 		virtual bool clippingSupport() const { return true; }
@@ -140,7 +135,7 @@ class YAFRAYCORE_EXPORT vTriangle_t: public primitive_t
 		void setMaterial(const material_t *m) { material = m; }
 		void setNormals(int a, int b, int c){ na=a, nb=b, nc=c; }
 		vector3d_t getNormal(){ return vector3d_t(normal); }
-		float surfaceArea() const;
+		PFLOAT surfaceArea() const;
 		void sample(float s1, float s2, point3d_t &p, vector3d_t &n) const;
 		void recNormal();
 
@@ -160,7 +155,7 @@ class YAFRAYCORE_EXPORT bsTriangle_t: public primitive_t
 		bsTriangle_t(){};
 		bsTriangle_t(int ia, int ib, int ic, meshObject_t* m): pa(ia), pb(ib), pc(ic),
 					na(-1), nb(-1), nc(-1), mesh(m){ };
-		virtual bool intersect(const ray_t &ray, float *t, intersectData_t &data) const;
+		virtual bool intersect(const ray_t &ray, PFLOAT *t, intersectData_t &data) const;
 		virtual bound_t getBound() const;
 		//virtual bool intersectsBound(exBound_t &eb) const;
 		// return: false:=doesn't overlap bound; true:=valid clip exists
@@ -171,7 +166,7 @@ class YAFRAYCORE_EXPORT bsTriangle_t: public primitive_t
 		// following are methods which are not part of primitive interface:
 		void setMaterial(const material_t *m) { material = m; }
 		void setNormals(int a, int b, int c){ na=a, nb=b, nc=c; }
-		//float surfaceArea() const;
+		//PFLOAT surfaceArea() const;
 		//void sample(float s1, float s2, point3d_t &p, vector3d_t &n) const;
 
 	protected:

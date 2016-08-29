@@ -146,7 +146,6 @@ class YAFRAYCORE_EXPORT triangleObjectInstance_t: public triangleObject_t
         std::vector<triangleInstance_t> triangles;
         matrix4x4_t objToWorld;
         triangleObject_t* mBase;
-	using object3d_t::getPrimitives;
 };
 
 #include <yafraycore/triangle_inline.h>

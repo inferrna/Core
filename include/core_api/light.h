@@ -22,7 +22,7 @@
 
 __BEGIN_YAFRAY
 
-struct surfacePoint_t;
+class surfacePoint_t;
 class background_t;
 
 enum { LIGHT_NONE = 0, LIGHT_DIRACDIR = 1, LIGHT_SINGULAR = 1<<1 }; // "LIGHT_DIRACDIR" *must* be same as "BSDF_SPECULAR" (material.h)!
@@ -62,7 +62,7 @@ class light_t
 		virtual color_t emitPhoton(float s1, float s2, float s3, float s4, ray_t &ray, float &ipdf) const = 0;
 
 		//! create a sample of light emission, similar to emitPhoton, just more suited for bidirectional methods
-		/*! fill in s.dirPdf, s.areaPdf, s.col and s.flags, and s.sp if not nullptr */
+		/*! fill in s.dirPdf, s.areaPdf, s.col and s.flags, and s.sp if not NULL */
 		virtual color_t emitSample(vector3d_t &wo, lSample_t &s) const{return color_t(0.f);};
 
 		//! indicate whether the light has a dirac delta distribution or not
@@ -102,32 +102,14 @@ class light_t
 		
 		//! This method must be called right after the factory is called on a background light or the light will fail
 		virtual void setBackground(background_t *bg) { background = bg; }
-		//! Enable/disable entire light source
-		bool lightEnabled() const { return lLightEnabled;}
-		bool castShadows() const { return lCastShadows; }
-		//! checks if the light can shoot caustic photons (photonmap integrator)
-		bool shootsCausticP() const { return lShootCaustic; }
-		//! checks if the light can shoot diffuse photons (photonmap integrator)
-		bool shootsDiffuseP() const { return lShootDiffuse; }
-		//! checks if the light is a photon-only light (only shoots photons, not illuminating)
-		bool photonOnly() const { return lPhotonOnly; }
-		//! sets clampIntersect value to reduce noise at the expense of realism and inexact overall lighting
-		void setClampIntersect(float clamp) { lClampIntersect = clamp; }
 
-		light_t(): flags(LIGHT_NONE),lLightEnabled(true),lCastShadows(true),lShootCaustic(true),lShootDiffuse(true),lPhotonOnly(false) {}
+		light_t(): flags(LIGHT_NONE) {}
 		light_t(LIGHTF_t _flags): flags(_flags) {}
 		LIGHTF_t getFlags() const { return flags; }
 
 	protected:
 		LIGHTF_t flags;
 		background_t* background;
-	    bool lLightEnabled; //!< enable/disable light
-		bool lCastShadows; //!< enable/disable if the light should cast direct shadows
-		bool lShootCaustic; //!<enable/disable if the light can shoot caustic photons (photonmap integrator)
-		bool lShootDiffuse; //!<enable/disable if the light can shoot diffuse photons (photonmap integrator)
-		bool lPhotonOnly; //!<enable/disable if the light is a photon-only light (only shoots photons, not illuminating)
-		float lClampIntersect = 0.f;	//!<trick to reduce light sampling noise at the expense of realism and inexact overall light. 0.f disables clamping
-
 };
 
 __END_YAFRAY

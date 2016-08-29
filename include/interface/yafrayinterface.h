@@ -18,10 +18,10 @@
 #define Y_YAFRAYINTERFACE_H
 
 #include <yafray_constants.h>
+#include <yaf_revision.h>
 #include <list>
 #include <vector>
 #include <string>
-#include <core_api/color.h>
 
 
 __BEGIN_YAFRAY
@@ -48,7 +48,7 @@ class YAFRAYPLUGIN_EXPORT yafrayInterface_t
 		yafrayInterface_t();
 		virtual ~yafrayInterface_t();
 		// directly related to scene_t:
-		virtual void loadPlugins(const char *path); //!< load plugins from path, if nullptr load from default path, if available.
+		virtual void loadPlugins(const char *path); //!< load plugins from path, if NULL load from default path, if available.
 		virtual bool startGeometry(); //!< call before creating geometry; only meshes and vmaps can be created in this state
 		virtual bool endGeometry(); //!< call after creating geometry;
 		virtual unsigned int getNextFreeID();
@@ -105,11 +105,9 @@ class YAFRAYPLUGIN_EXPORT yafrayInterface_t
         virtual imageHandler_t*	createImageHandler	(const char* name, bool addToTable = true);
 		virtual unsigned int 	createObject		(const char* name);
 		virtual void clearAll(); //!< clear the whole environment + scene, i.e. free (hopefully) all memory.
-		virtual void render(colorOutput_t &output, progressBar_t *pb = nullptr); //!< render the scene...
+		virtual void render(colorOutput_t &output, progressBar_t *pb = 0); //!< render the scene...
 		virtual bool startScene(int type=0); //!< start a new scene; Must be called before any of the scene_t related callbacks!
-		virtual bool setLoggingAndBadgeSettings();
-		virtual bool setupRenderPasses(); //!< setup render passes information
-		bool setInteractive(bool interactive);
+		virtual void setInputGamma(float gammaVal, bool enable);
 		virtual void abort();
 		virtual paraMap_t* getRenderParameters() { return params; }
 		//!< put the rendered image to output
@@ -119,24 +117,22 @@ class YAFRAYPLUGIN_EXPORT yafrayInterface_t
 		virtual std::string getImageFormatFromFullName(const std::string &fullname);
 		virtual std::string getImageFullNameFromFormat(const std::string &format);
 		
-		void setConsoleVerbosityLevel(const std::string &strVLevel);
-		void setLogVerbosityLevel(const std::string &strVLevel);
+		virtual void setVerbosityLevel(int vlevel);
+		virtual void setVerbosityInfo();
+		virtual void setVerbosityWarning();
+		virtual void setVerbosityError();
+		virtual void setVerbosityMute();
 		
-		virtual void setParamsBadgePosition(const std::string &badgePosition = "none");
+		virtual void setDrawParams(bool on = true);
 		virtual bool getDrawParams();
 
 		virtual char* getVersion() const; //!< Get version to check aginst the exporters
 		
 		/*! Console Printing wrappers to report in color with yafaray's own console coloring */
-		void printDebug(const std::string &msg);
-		void printVerbose(const std::string &msg);
 		void printInfo(const std::string &msg);
-		void printParams(const std::string &msg);
 		void printWarning(const std::string &msg);
 		void printError(const std::string &msg);
-		
-		void setInputColorSpace(std::string color_space_string, float gammaVal);
-		void setOutput2(colorOutput_t *out2);
+		void printLog(const std::string &msg);
 	
 	protected:
 		paraMap_t *params;
@@ -146,7 +142,7 @@ class YAFRAYPLUGIN_EXPORT yafrayInterface_t
 		scene_t *scene;
 		imageFilm_t *film;
 		float inputGamma;
-		colorSpaces_t inputColorSpace;
+		bool gcInput;
 };
 
 typedef yafrayInterface_t * interfaceConstructor();

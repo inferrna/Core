@@ -23,9 +23,6 @@
 #include "yafsystem.h"
 #include <list>
 #include <vector>
-#include <string>
-#include <core_api/renderpasses.h>
-#include <core_api/logging.h>
 
 __BEGIN_YAFRAY
 class light_t;
@@ -85,14 +82,7 @@ class YAFRAYCORE_EXPORT renderEnvironment_t
 		imageFilm_t*	createImageFilm(const paraMap_t &params, colorOutput_t &output);
 		imageHandler_t* createImageHandler(const std::string &name, paraMap_t &params, bool addToTable = true);
 		void 			setScene(scene_t *scene) { curren_scene=scene; };
-		bool			setupScene(scene_t &scene, const paraMap_t &params, colorOutput_t &output, progressBar_t *pb = nullptr);
-		void			setupRenderPasses(const paraMap_t &params);
-		void			setupLoggingAndBadge(const paraMap_t &params);
-		const			renderPasses_t* getRenderPasses() const { return &renderPasses; }
-		const 			std::map<std::string,camera_t *> * getCameraTable() const { return &camera_table; }
-		void			setOutput2(colorOutput_t *out2) { output2 = out2; }
-		colorOutput_t*	getOutput2() { return output2; }
-		
+		bool			setupScene(scene_t &scene, const paraMap_t &params, colorOutput_t &output, progressBar_t *pb = 0);
 		void clearAll();
 
 		virtual void registerFactory(const std::string &name,light_factory_t *f);
@@ -112,6 +102,8 @@ class YAFRAYCORE_EXPORT renderEnvironment_t
 		virtual std::string getImageFormatFromFullName(const std::string &fullname);
 		virtual std::string getImageFormatFromExtension(const std::string &extension);
 		virtual std::string getImageFullNameFromFormat(const std::string &format);
+
+		int Debug;
 
 		renderEnvironment_t();
 		virtual ~renderEnvironment_t();
@@ -144,10 +136,7 @@ class YAFRAYCORE_EXPORT renderEnvironment_t
 		std::map<std::string,imageHandler_t *> imagehandler_table;
 		std::map<std::string,std::string> imagehandler_fullnames;
 		std::map<std::string,std::string> imagehandler_extensions;
-
 		scene_t *curren_scene;
-		renderPasses_t renderPasses;
-		colorOutput_t *output2; //secondary color output to export to file at the same time it's exported to Blender
 };
 
 __END_YAFRAY

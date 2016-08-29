@@ -47,7 +47,7 @@ template<class T> class rkdTreeNode
 public:
 	void createLeaf(u_int32 *primIdx, int np, const T **prims, MemoryArena &arena)
 	{
-		primitives = nullptr;
+		primitives = 0;
 		flags = np << 2;
 		flags |= 3;
 		if(np>1)
@@ -64,9 +64,9 @@ public:
 		else _emptyKd_leaves++; //stat
 		Kd_leaves++; //stat
 	}
-	void createInterior(int axis, float d)
+	void createInterior(int axis, PFLOAT d)
 	{	division = d; flags = (flags & ~3) | axis; Kd_inodes++; }
-	float 	SplitPos() const { return division; }
+	PFLOAT 	SplitPos() const { return division; }
 	int 	SplitAxis() const { return flags & 3; }
 	int 	nPrimitives() const { return flags >> 2; }
 	bool 	IsLeaf() const { return (flags & 3) == 3; }
@@ -100,11 +100,11 @@ template<class T> class YAFRAYCORE_EXPORT kdTree_t
 public:
 	kdTree_t(const T **v, int np, int depth=-1, int leafSize=2,
 			float cost_ratio=0.35, float emptyBonus=0.33);
-	bool Intersect(const ray_t &ray, float dist, T **tr, float &Z, intersectData_t &data) const;
-//	bool IntersectDBG(const ray_t &ray, float dist, triangle_t **tr, float &Z) const;
-	bool IntersectS(const ray_t &ray, float dist, T **tr, float shadow_bias) const;
-	bool IntersectTS(renderState_t &state, const ray_t &ray, int maxDepth, float dist, T **tr, color_t &filt, float shadow_bias) const;
-//	bool IntersectO(const point3d_t &from, const vector3d_t &ray, float dist, T **tr, float &Z) const;
+	bool Intersect(const ray_t &ray, PFLOAT dist, T **tr, PFLOAT &Z, intersectData_t &data) const;
+//	bool IntersectDBG(const ray_t &ray, PFLOAT dist, triangle_t **tr, PFLOAT &Z) const;
+	bool IntersectS(const ray_t &ray, PFLOAT dist, T **tr) const;
+	bool IntersectTS(renderState_t &state, const ray_t &ray, int maxDepth, PFLOAT dist, T **tr, color_t &filt) const;
+//	bool IntersectO(const point3d_t &from, const vector3d_t &ray, PFLOAT dist, T **tr, PFLOAT &Z) const;
 	bound_t getBound(){ return treeBound; }
 	~kdTree_t();
 private:

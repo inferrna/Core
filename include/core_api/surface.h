@@ -31,21 +31,28 @@ class material_t;
 class light_t;
 class object3d_t;
 class diffRay_t;
-class vector3d_t;
 
-class intersectData_t
+struct intersectData_t
 {
-	public:
-		intersectData_t()
-		{
-			// Empty
-		}
-		float b0 = 0.f;
-		float b1 = 0.f;
-		float b2 = 0.f;
-		float t = 0.f;
-		const vector3d_t * edge1 = nullptr;
-		const vector3d_t * edge2 = nullptr;
+	float b0;
+	float b1;
+	float b2;
+	float t;
+
+	intersectData_t() : b0(0.f), b1(0.f), b2(0.f), t(0.f)
+	{
+		// Empty
+	}
+
+	inline intersectData_t & operator = (intersectData_t &in)
+	{
+		b0 = in.b0;
+		b1 = in.b1;
+		b2 = in.b2;
+		t = in.t;
+
+		return *this;
+	}
 };
 
 /*! This holds a sampled surface point's data
@@ -53,7 +60,7 @@ class intersectData_t
 	It contains data about normal, position, assigned material and other
 	things.
  */
-class YAFRAYCORE_EXPORT surfacePoint_t
+struct YAFRAYCORE_EXPORT surfacePoint_t
 {
 	//int object; //!< the object owner of the point.
 	const material_t *material; //!< the surface material
@@ -74,39 +81,19 @@ class YAFRAYCORE_EXPORT surfacePoint_t
 	bool available;
 	int primNum;
 
-		float U; //!< the u texture coord.
-		float V; //!< the v texture coord.
-		vector3d_t  NU; //!< second vector building orthogonal shading space with N
-		vector3d_t  NV; //!< third vector building orthogonal shading space with N
-		vector3d_t dPdU; //!< u-axis in world space
-		vector3d_t dPdV; //!< v-axis in world space
-		vector3d_t dSdU; //!< u-axis in shading space (NU, NV, N)
-		vector3d_t dSdV; //!< v-axis in shading space (NU, NV, N)
-		//float dudNU;
-		//float dudNV;
-		//float dvdNU;
-		//float dvdNV;
+	GFLOAT U; //!< the u texture coord.
+	GFLOAT V; //!< the v texture coord.
+    vector3d_t  NU; //!< second vector building orthogonal shading space with N
+    vector3d_t  NV; //!< third vector building orthogonal shading space with N
+	vector3d_t dPdU; //!< u-axis in world space
+	vector3d_t dPdV; //!< v-axis in world space
+	vector3d_t dSdU; //!< u-axis in shading space (NU, NV, N)
+	vector3d_t dSdV; //!< v-axis in shading space (NU, NV, N)
+	//GFLOAT dudNU;
+	//GFLOAT dudNV;
+	//GFLOAT dvdNU;
+	//GFLOAT dvdNV;
 };
-
-inline float surfacePoint_t::getDistToNearestEdge() const
-{
-	if(data.edge1 && data.edge2)
-	{
-		float edge1len = data.edge1->length();
-		float edge2len = data.edge2->length();
-		float edge12len = (*(data.edge1) + *(data.edge2)).length() * 0.5f;
-		
-		float edge1dist = data.b1 * edge1len;
-		float edge2dist = data.b2 * edge2len;
-		float edge12dist = data.b0 * edge12len;
-						
-		float edgeMinDist = std::min(edge12dist, std::min(edge1dist, edge2dist));
-		
-		return edgeMinDist;
-	}
-	else return std::numeric_limits<float>::infinity();
-}
-
 
 YAFRAYCORE_EXPORT surfacePoint_t blend_surface_points(surfacePoint_t const& sp_0, surfacePoint_t const& sp_1, float const alpha);
 
@@ -119,8 +106,8 @@ class YAFRAYCORE_EXPORT spDifferentials_t
 		//! compute differentials for a scattered ray
 		void reflectedRay(const diffRay_t &in, diffRay_t &out) const;
 		//! compute differentials for a refracted ray
-		void refractedRay(const diffRay_t &in, diffRay_t &out, float IOR) const;
-		float projectedPixelArea();
+		void refractedRay(const diffRay_t &in, diffRay_t &out, PFLOAT IOR) const;
+		PFLOAT projectedPixelArea();
 		vector3d_t dPdx;
 		vector3d_t dPdy;
 		const surfacePoint_t &sp;

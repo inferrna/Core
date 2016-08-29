@@ -30,14 +30,12 @@ class YAFRAYPLUGIN_EXPORT xmlInterface_t: public yafrayInterface_t
 		xmlInterface_t();
 		// directly related to scene_t:
 		virtual void loadPlugins(const char *path);
-		virtual bool setLoggingAndBadgeSettings();
-		virtual bool setupRenderPasses(); //!< setup render passes information
 		virtual bool startGeometry();
 		virtual bool endGeometry();
 		virtual unsigned int getNextFreeID();
-		virtual bool startTriMesh(unsigned int id, int vertices, int triangles, bool hasOrco, bool hasUV=false, int type=0, int obj_pass_index=0);
-		virtual bool startTriMeshPtr(unsigned int *id, int vertices, int triangles, bool hasOrco, bool hasUV=false, int type=0, int obj_pass_index=0);
-		virtual bool startCurveMesh(unsigned int id, int vertices, int obj_pass_index=0);
+		virtual bool startTriMesh(unsigned int id, int vertices, int triangles, bool hasOrco, bool hasUV=false, int type=0);
+		virtual bool startTriMeshPtr(unsigned int *id, int vertices, int triangles, bool hasOrco, bool hasUV=false, int type=0);
+		virtual bool startCurveMesh(unsigned int id, int vertices);
 		virtual bool endTriMesh();
 		virtual bool addInstance(unsigned int baseObjectId, matrix4x4_t objToWorld);
 		virtual bool endCurveMesh(const material_t *mat, float strandStart, float strandEnd, float strandShape);
@@ -59,13 +57,10 @@ class YAFRAYPLUGIN_EXPORT xmlInterface_t: public yafrayInterface_t
 		virtual VolumeRegion* 	createVolumeRegion	(const char* name);
 		virtual unsigned int 	createObject		(const char* name);
 		virtual void clearAll(); //!< clear the whole environment + scene, i.e. free (hopefully) all memory.
-		virtual void render(colorOutput_t &output, progressBar_t *pb = nullptr); //!< render the scene...
+		virtual void render(colorOutput_t &output); //!< render the scene...
 		virtual bool startScene(int type=0); //!< start a new scene; Must be called before any of the scene_t related callbacks!
 		
 		virtual void setOutfile(const char *fname);
-		
-		void setXMLColorSpace(std::string color_space_string, float gammaVal);
-		
 	protected:
 		void writeParamMap(const paraMap_t &pmap, int indent=1);
 		void writeParamList(int indent);
@@ -77,8 +72,6 @@ class YAFRAYPLUGIN_EXPORT xmlInterface_t: public yafrayInterface_t
 		size_t nmat;
 		int n_uvs;
 		unsigned int nextObj;
-		float XMLGamma;
-		colorSpaces_t XMLColorSpace;
 };
 
 typedef xmlInterface_t * xmlInterfaceConstructor();

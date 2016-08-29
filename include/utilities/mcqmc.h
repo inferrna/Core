@@ -75,7 +75,7 @@ public:
 		}
 		else
 		{
-			double hh = 0.0, h = mInvBase;
+			double hh, h = mInvBase;
 			while (h >= r)
 			{
 				hh = h;

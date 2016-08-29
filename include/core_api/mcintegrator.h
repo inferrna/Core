@@ -23,17 +23,8 @@
 
 #include <core_api/tiledintegrator.h>
 #include <yafraycore/photon.h>
-#include <boost/filesystem.hpp>
 
 __BEGIN_YAFRAY
-
-enum photonMapProcessing_t
-{
-	PHOTONS_GENERATE_ONLY,
-	PHOTONS_GENERATE_AND_SAVE,
-	PHOTONS_LOAD,
-	PHOTONS_REUSE
-};
 
 class YAFRAYCORE_EXPORT mcIntegrator_t: public tiledIntegrator_t
 {

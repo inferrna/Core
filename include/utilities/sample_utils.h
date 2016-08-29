@@ -43,8 +43,8 @@ vector3d_t inline SampleCosHemisphere(const vector3d_t &N,const vector3d_t &Ru,c
 	if(s1>=1.0f) return N; //Fix for some white/black dots when s1>1.0. Also, this returns a fast trivial value when s1=1.0.
 	else
 	{
-		float z1 = s1;
-		float z2 = s2*M_2PI;
+		PFLOAT z1 = s1;
+		PFLOAT z2 = s2*M_2PI;
 		return (Ru*fCos(z2) + Rv*fSin(z2))*fSqrt(1.0-z1) + N*fSqrt(z1);
 	}
 }
@@ -55,11 +55,11 @@ vector3d_t inline SampleSphere(float s1, float s2)
 {
 	vector3d_t dir;
 	dir.z = 1.0f - 2.0f*s1;
-	float r = 1.0f - dir.z*dir.z;
+	PFLOAT r = 1.0f - dir.z*dir.z;
 	if(r>0.0f)
 	{
 		r = fSqrt(r);
-		float a = M_2PI * s2;
+		PFLOAT a = M_2PI * s2;
 		dir.x = fCos(a) * r;
 		dir.y = fSin(a) * r;
 	}
@@ -125,11 +125,12 @@ public:
 		// Find surrounding cdf segments
 		float *ptr = std::lower_bound(cdf, cdf+count+1, u);
 		int index = (int) (ptr-cdf-1);
-		if(index<0) //Hopefully this should no longer be necessary from now on, as a minimum value slightly over 0.f has been set to the scrHalton function to avoid ptr and cdf to coincide (which caused index = -1)
+		if(index<0)
 		{
 		    Y_ERROR << "Index out of bounds in pdf1D_t::Sample: index, u, ptr, cdf = " << index << ", " << u << ", " << ptr << ", " << cdf << yendl;
 		    index=0;
 		}
+             //FIXME: this is one of the fixes for the white dots. Sometimes for some reason this index was -1, causing an access outside the array and an invalid value->NaN, inf, etc. Now, we ensure the index does not move <0, but we should look for a better solution to prevent the index to go <0 in the first place.
 		// Return offset along current cdf segment
 		float delta = (u - cdf[index]) / (cdf[index+1] - cdf[index]);
 		if(pdf) *pdf = func[index] * invIntegral;
@@ -167,8 +168,8 @@ public:
 void inline minRot(const vector3d_t &D, const vector3d_t &U,
 				   const vector3d_t &D2, vector3d_t &U2, vector3d_t &V2)
 {
-	float cosAlpha = D*D2;
-	float sinAlpha = fSqrt(1 - cosAlpha*cosAlpha);
+	PFLOAT cosAlpha = D*D2;
+	PFLOAT sinAlpha = fSqrt(1 - cosAlpha*cosAlpha);
 	vector3d_t v = D^D2;
 	U2 = cosAlpha*U + (1.f-cosAlpha) * (v*U) + sinAlpha * (v^U);
 	V2 = D2^U2;

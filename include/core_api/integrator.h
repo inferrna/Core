@@ -27,7 +27,6 @@
 #include "scene.h"
 #include <yafraycore/monitor.h>
 #include <string>
-#include <core_api/renderpasses.h>
 
 __BEGIN_YAFRAY
 
@@ -36,7 +35,7 @@ hit by a given ray
 */
 
 class imageFilm_t;
-struct renderArea_t;
+class renderArea_t;
 
 class YAFRAYCORE_EXPORT integrator_t
 {

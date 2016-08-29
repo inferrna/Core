@@ -25,13 +25,6 @@
 #include "pkdtree.h"
 #include <core_api/color.h>
 
-#include <boost/archive/xml_iarchive.hpp>
-#include <boost/archive/xml_oarchive.hpp>
-#include <boost/archive/binary_iarchive.hpp>
-#include <boost/archive/binary_oarchive.hpp>
-#include <boost/serialization/nvp.hpp>
-#include <boost/serialization/vector.hpp>
-
 __BEGIN_YAFRAY
 #define c255Ratio 81.16902097686662123083
 #define c256Ratio 40.74366543152520595687
@@ -64,10 +57,10 @@ class dirConverter_t
 		}
 
 	protected:
-		float cosphi[256];
-		float sinphi[256];
-		float costheta[255];
-		float sintheta[255];
+		PFLOAT cosphi[256];
+		PFLOAT sinphi[256];
+		PFLOAT costheta[255];
+		PFLOAT sintheta[255];
 };
 
 extern YAFRAYCORE_EXPORT dirConverter_t dirconverter;
@@ -125,26 +118,9 @@ class photon_t
 #ifdef _SMALL_PHOTONS
 		rgbe_t c;
 		unsigned char theta,phi;
-
-		friend class boost::serialization::access;
-		template<class Archive> void serialize(Archive & ar, const unsigned int version)
-		{
-			ar & BOOST_SERIALIZATION_NVP(pos);
-			ar & BOOST_SERIALIZATION_NVP(c);
-			ar & BOOST_SERIALIZATION_NVP(theta);
-			ar & BOOST_SERIALIZATION_NVP(phi);
-		}
 #else
 		color_t c;
 		normal_t dir;
-
-		friend class boost::serialization::access;
-		template<class Archive> void serialize(Archive & ar, const unsigned int version)
-		{
-			ar & BOOST_SERIALIZATION_NVP(pos);
-			ar & BOOST_SERIALIZATION_NVP(c);
-			ar & BOOST_SERIALIZATION_NVP(dir);
-		}
 #endif
         vector3d_t hitNormal;
 
@@ -166,12 +142,12 @@ struct radData_t
 struct foundPhoton_t
 {
 	foundPhoton_t(){};
-	foundPhoton_t(const photon_t *p, float d): photon(p), distSquare(d){}
+	foundPhoton_t(const photon_t *p, PFLOAT d): photon(p), distSquare(d){}
 	bool operator<(const foundPhoton_t &p2) const { return distSquare < p2.distSquare; }
 	const photon_t *photon;
-	float distSquare;
+	PFLOAT distSquare;
 	//temp!!
-	float dis;
+	PFLOAT dis;
 };
 
 class YAFRAYCORE_EXPORT photonMap_t
@@ -224,7 +200,7 @@ protected:
 struct photonGather_t
 {
 	photonGather_t(u_int32 mp, const point3d_t &p);
-	void operator()(const photon_t *photon, float dist2, float &maxDistSquared) const;
+	void operator()(const photon_t *photon, PFLOAT dist2, PFLOAT &maxDistSquared) const;
 	const point3d_t &p;
 	foundPhoton_t *photons;
 	u_int32 nLookup;
@@ -233,8 +209,8 @@ struct photonGather_t
 
 struct nearestPhoton_t
 {
-	nearestPhoton_t(const point3d_t &pos, const vector3d_t &norm): p(pos), n(norm), nearest(nullptr) {}
-	void operator()(const photon_t *photon, float dist2, float &maxDistSquared) const
+	nearestPhoton_t(const point3d_t &pos, const vector3d_t &norm): p(pos), n(norm), nearest(0) {}
+	void operator()(const photon_t *photon, PFLOAT dist2, PFLOAT &maxDistSquared) const
 	{
 		if ( photon->direction() * n > 0.f) { nearest = photon; maxDistSquared = dist2; }
 	}
@@ -247,17 +223,12 @@ struct nearestPhoton_t
 struct eliminatePhoton_t
 {
 	eliminatePhoton_t(const vector3d_t &norm): n(norm) {}
-	void operator()(const radData_t *rpoint, float dist2, float &maxDistSquared) const
+	void operator()(const radData_t *rpoint, PFLOAT dist2, PFLOAT &maxDistSquared) const
 	{
 		if ( rpoint->normal * n > 0.f) { rpoint->use = false; }
 	}
 	const vector3d_t n;
 };
-
-
-YAFRAYCORE_EXPORT bool photonMapLoad(photonMap_t * map, const std::string &filename, bool debugXMLformat = false);
-
-YAFRAYCORE_EXPORT bool photonMapSave(const photonMap_t * map, const std::string &filename, bool debugXMLformat = false);
 
 
 __END_YAFRAY

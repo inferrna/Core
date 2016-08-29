@@ -19,7 +19,6 @@
 
 #include <yafray_config.h>
 #include <yafraycore/nodematerial.h>
-#include <core_api/color_ramp.h>
 
 __BEGIN_YAFRAY
 

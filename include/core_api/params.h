@@ -82,9 +82,9 @@ class YAFRAYCORE_EXPORT parameter_t
 			int ival;
 			double fval;
 			bool bval;
-			float C[4];
-			float P[4];
-			//float matrix[4][4];
+			CFLOAT C[4];
+			PFLOAT P[4];
+			//PFLOAT matrix[4][4];
 		};
 		int vtype; //!< type of the stored value
 };
@@ -97,14 +97,14 @@ class YAFRAYCORE_EXPORT paraMap_t
 		template <class T>
 		bool getParam(const std::string &name, T &val) const
 		{
-			auto i=dicc.find(name);
+			std::map<std::string,parameter_t>::const_iterator i=dicc.find(name);
 			if(i != dicc.end() ) return i->second.getVal(val);
 			return false;
 		}
 		
 		bool getMatrix(const std::string &name, matrix4x4_t &m) const
 		{
-			auto i=mdicc.find(name);
+			std::map<std::string,matrix4x4_t>::const_iterator i=mdicc.find(name);
 			if(i != mdicc.end() ){ m = i->second; return true; }
 			return false;
 		}

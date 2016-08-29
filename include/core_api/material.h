@@ -23,7 +23,7 @@
 #include "ray.h"
 #include "surface.h"
 #include "utilities/sample_utils.h"
-#include "core_api/object3d.h"
+
 
 __BEGIN_YAFRAY
 
@@ -87,15 +87,6 @@ struct pSample_t: public sample_t // << whats with the public?? structs inherit 
 	const color_t alpha; //!< the filter color between last scattering and this hit (not pre-applied to lcol!)
 	color_t color;       //!< the new color after scattering, i.e. what will be lcol for next scatter.
 };
-
-enum visibility_t
-{
-	NORMAL_VISIBLE			= 0,
-	VISIBLE_NO_SHADOWS		= 1,
-	INVISIBLE_SHADOWS_ONLY	= 2,
-	INVISIBLE				= 3
-};
-
 
 class YAFRAYCORE_EXPORT material_t
 {
@@ -201,94 +192,6 @@ protected:
 };
 
 
-inline void material_t::applyWireFrame(float & value, float wireFrameAmount, const surfacePoint_t &sp) const
-{
-	if(wireFrameAmount > 0.f && mWireFrameThickness > 0.f)
-	{
-		float dist = sp.getDistToNearestEdge();
-		if(dist <= mWireFrameThickness)
-		{
-			if(mWireFrameExponent > 0.f)
-			{
-				wireFrameAmount *= std::pow((mWireFrameThickness - dist) / mWireFrameThickness, mWireFrameExponent);
-			}
-			value = value * (1.f - wireFrameAmount);
-		}
-	}
-}
-
-inline void material_t::applyWireFrame(color_t & col, float wireFrameAmount, const surfacePoint_t &sp) const
-{
-	if(wireFrameAmount > 0.f && mWireFrameThickness > 0.f)
-	{
-		float dist = sp.getDistToNearestEdge();
-		if(dist <= mWireFrameThickness)
-		{
-			color_t wireFrameCol = mWireFrameColor * wireFrameAmount;
-			if(mWireFrameExponent > 0.f)
-			{
-				wireFrameAmount *= std::pow((mWireFrameThickness - dist) / mWireFrameThickness, mWireFrameExponent);
-			}
-			col.blend(wireFrameCol, wireFrameAmount);
-		}
-	}
-}
-
-inline void material_t::applyWireFrame(color_t *const col, float wireFrameAmount, const surfacePoint_t &sp) const
-{
-	if(wireFrameAmount > 0.f && mWireFrameThickness > 0.f)
-	{
-		float dist = sp.getDistToNearestEdge();
-		if(dist <= mWireFrameThickness)
-		{
-			color_t wireFrameCol = mWireFrameColor * wireFrameAmount;
-			if(mWireFrameExponent > 0.f)
-			{
-				wireFrameAmount *= std::pow((mWireFrameThickness - dist) / mWireFrameThickness, mWireFrameExponent);
-			}
-            col[0].blend(wireFrameCol, wireFrameAmount);
-            col[1].blend(wireFrameCol, wireFrameAmount);
-		}
-	}
-}
-
-inline void material_t::applyWireFrame(colorA_t & col, float wireFrameAmount, const surfacePoint_t &sp) const
-{
-	if(wireFrameAmount > 0.f && mWireFrameThickness > 0.f)
-	{
-		float dist = sp.getDistToNearestEdge();
-		if(dist <= mWireFrameThickness)
-		{
-			color_t wireFrameCol = mWireFrameColor * wireFrameAmount;
-			if(mWireFrameExponent > 0.f)
-			{
-				wireFrameAmount *= std::pow((mWireFrameThickness - dist) / mWireFrameThickness, mWireFrameExponent);
-			}
-			col.blend(wireFrameCol, wireFrameAmount);
-			col.A = wireFrameAmount;
-		}
-	}
-}
-
-inline void material_t::applyWireFrame(colorA_t *const col, float wireFrameAmount, const surfacePoint_t &sp) const
-{
-	if(wireFrameAmount > 0.f && mWireFrameThickness > 0.f)
-	{
-		float dist = sp.getDistToNearestEdge();
-		if(dist <= mWireFrameThickness)
-		{
-			color_t wireFrameCol = mWireFrameColor * wireFrameAmount;
-			if(mWireFrameExponent > 0.f)
-			{
-				wireFrameAmount *= std::pow((mWireFrameThickness - dist) / mWireFrameThickness, mWireFrameExponent);
-			}
-            col[0].blend(wireFrameCol, wireFrameAmount);
-			col[0].A = wireFrameAmount;
-            col[1].blend(wireFrameCol, wireFrameAmount);
-			col[1].A = wireFrameAmount;
-		}
-	}
-}
 
 __END_YAFRAY
 

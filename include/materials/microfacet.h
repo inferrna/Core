@@ -19,7 +19,6 @@
 
 #include <core_api/surface.h>
 #include <core_api/vector3d.h>
-#include <core_api/color_ramp.h>
 
 __BEGIN_YAFRAY
 
@@ -193,7 +192,7 @@ inline void reflectMicrofacet(const vector3d_t &wo, vector3d_t &wi, const vector
 	wi = -wi;
 }
 
-inline float SchlickFresnel(float costheta, float R)
+inline float SchlickFresnel(PFLOAT costheta, PFLOAT R)
 {
 	float c1 = (1.f - costheta);
 	float c2 = c1 * c1;

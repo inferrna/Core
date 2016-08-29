@@ -25,7 +25,7 @@ __BEGIN_YAFRAY
 class YAFRAYCORE_EXPORT hashGrid_t
 {
 public:
-	hashGrid_t(){hashGrid = nullptr;}
+	hashGrid_t(){hashGrid = NULL;}
 
 	hashGrid_t(double _cellSize, unsigned int _gridSize, bound_t _bBox);
 
@@ -37,7 +37,7 @@ public:
 
 	void pushPhoton(photon_t &p);
 
-	unsigned int gather(const point3d_t &P, foundPhoton_t *found, unsigned int K, float radius);
+	unsigned int gather(const point3d_t &P, foundPhoton_t *found, unsigned int K, PFLOAT radius);
 
 private:
 	unsigned int Hash(const int ix, const int iy, const int iz) {
